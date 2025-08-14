@@ -1,0 +1,31 @@
+
+services:
+  php-apache:
+    ports:
+      - "80:80"
+    build: './build/php'
+    volumes:
+      - ./app:/var/www/html
+  mysql:
+    ports:
+      - "3306:3306"
+    build: './build/mysql'
+    environment:
+      MYSQL_ROOT_PASSWORD: "secret"
+      MYSQL_DATABASE: "control_routier"
+    volumes:
+      - dbData:/var/lib/mysql
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    links:
+      - mysql
+    environment:
+      PMA_HOST: mysql 
+      PMA_PORT: 3306
+      MYSQL_ROOT_PASSWORD: "secret"
+    ports:
+      - 8081:80
+volumes:
+  app:
+  dbData:
+#docker-compose up --build pour installer les dependences, télécharger les images, #créer les #container
