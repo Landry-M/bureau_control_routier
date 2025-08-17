@@ -41,9 +41,9 @@
 
                         <!-- Topbar Search Form -->
                         <div class="app-search dropdown d-none d-lg-block">
-                            <form>
+                            <form action="/search" method="GET">
                                 <div class="input-group">
-                                    <input type="search" class="form-control dropdown-toggle" placeholder="Search..." id="top-search">
+                                    <input type="search" class="form-control dropdown-toggle" placeholder="Rechercher..." id="top-search" name="q" value="<?php echo htmlspecialchars($_GET['q'] ?? ''); ?>">
                                     <span class="ri-search-line search-icon"></span>
                                 </div>
                             </form>
@@ -110,8 +110,8 @@
                                 <i class="ri-search-line fs-22"></i>
                             </a>
                             <div class="dropdown-menu dropdown-menu-end dropdown-menu-animated dropdown-lg p-0">
-                                <form class="p-3">
-                                    <input type="search" class="form-control" placeholder="Search ..." aria-label="Recipient's username">
+                                <form class="p-3" action="/search" method="GET">
+                                    <input type="search" class="form-control" placeholder="Rechercher ..." name="q" value="<?php echo htmlspecialchars($_GET['q'] ?? ''); ?>" aria-label="Recherche">
                                 </form>
                             </div>
                         </li>

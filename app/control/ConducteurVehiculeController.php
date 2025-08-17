@@ -3,10 +3,17 @@
 namespace Control;
 
 use Model\Db;
+use Model\ActivityLogger;
 use ORM;
 use Exception;
 
 class ConducteurVehiculeController extends Db {
+    private $activityLogger;
+
+    public function __construct()
+    {
+        $this->activityLogger = new ActivityLogger();
+    }
     
     protected function handleFileUpload($file, $targetDir = 'uploads/conducteurs/') {
         // Vérifier si le fichier est vide
@@ -129,57 +136,7 @@ class ConducteurVehiculeController extends Db {
         }
     }
     
-    /**
-     * Gère l'enregistrement des données de contravention séparément
-     */
-    protected function handleContraventionData($data, $conducteurId) {
-        $result = [
-            'state' => true,
-            'message' => '',
-            'hasContravention' => false
-        ];
-        
-        // Vérifier si des données de contravention sont présentes
-        // On considère qu'il y a des données de contravention si au moins lieu OU type_infraction est rempli
-        $hasContraventionData = (!empty($data['lieu']) && trim($data['lieu']) !== '') || 
-                              (!empty($data['type_infraction']) && trim($data['type_infraction']) !== '');
-        
-        if (!$hasContraventionData) {
-            return $result; // Pas de données de contravention
-        }
-        
-        $result['hasContravention'] = true;
-        
-        try {
-            // Création de l'enregistrement de contravention
-            $contravention = ORM::for_table('contraventions')->create();
-            
-            // Données de la contravention
-            $contravention->dossier_id = $conducteurId;
-            $contravention->type_dossier = 'conducteur_vehicule';
-            $contravention->date_infraction = $data['date_infraction'] ?? null;
-            $contravention->lieu = $data['lieu'] ?? null;
-            $contravention->type_infraction = $data['type_infraction'] ?? null;
-            $contravention->reference_loi = $data['reference_loi'] ?? null;
-            $contravention->amende = !empty($data['amende']) ? (float)$data['amende'] : 0;
-            $contravention->payed = $data['payed'] ?? null;
-            $contravention->description = $data['description'] ?? null;
-            
-            if (!$contravention->save()) {
-                $result['state'] = false;
-                $result['message'] = "Erreur lors de l'enregistrement de la contravention: " . $contravention->error;
-                return $result;
-            }
-            
-            $result['message'] = 'Contravention enregistrée avec succès';
-            
-        } catch (Exception $e) {
-            $result['state'] = false;
-            $result['message'] = "Erreur lors de l'enregistrement de la contravention: " . $e->getMessage();
-        }
-        
-        return $result;
-    }
+    // Contravention handling removed per product requirement: no contravention is created here.
     
     public function create($data, $files = []) {
         $result = [
@@ -192,23 +149,58 @@ class ConducteurVehiculeController extends Db {
             // Démarrer une transaction
             $this->getConnexion();
             
+            // Si un conducteur existant est sélectionné, on l'utilise directement
+            if (!empty($data['existing_conducteur_id'])) {
+                $existingId = (int)$data['existing_conducteur_id'];
+                $existing = ORM::for_table('conducteur_vehicule')->find_one($existingId);
+                if (!$existing) {
+                    $result['state'] = false;
+                    $result['message'] = "Le conducteur sélectionné n'existe pas";
+                    return $result;
+                }
+                $conducteurId = $existingId;
+                $result['state'] = true;
+                $result['data'] = [ 'id' => $conducteurId, 'nom' => $existing->nom ];
+                $result['message'] = 'Conducteur existant sélectionné';
+                
+                // Logger la consultation du conducteur existant
+                $this->activityLogger->logView(
+                    $_SESSION['username'] ?? null,
+                    'conducteur_vehicule',
+                    "Sélection du conducteur existant ID: {$conducteurId}"
+                );
+
+                // Plus de traitement de contravention ici
+
+                return $result;
+            }
+
+            // Sinon, création/mise à jour (upsert) d'un nouveau conducteur
             // Gestion des uploads de fichiers du conducteur
             $photoPath = !empty($files['photo']['name']) ? $this->handleFileUpload($files['photo']) : null;
             $permisRectoPath = !empty($files['permis_recto']['name']) ? $this->handleFileUpload($files['permis_recto']) : null;
             $permisVersoPath = !empty($files['permis_verso']['name']) ? $this->handleFileUpload($files['permis_verso']) : null;
-            
-            // Création de l'enregistrement conducteur
-            $conducteur_vehicule = ORM::for_table('conducteur_vehicule')->create();
-            
-            // Données du conducteur
+
+            // Upsert conducteur_vehicule par numero_permis s'il est fourni
+            $conducteur_vehicule = null;
+            if (!empty($data['numero_permis'])) {
+                $conducteur_vehicule = ORM::for_table('conducteur_vehicule')
+                    ->where('numero_permis', $data['numero_permis'])
+                    ->find_one();
+            }
+            if (!$conducteur_vehicule) {
+                $conducteur_vehicule = ORM::for_table('conducteur_vehicule')->create();
+            }
+
+            // Données du conducteur (mise à jour si existant, sinon création)
             $conducteur_vehicule->nom = $data['nom'];
             $conducteur_vehicule->date_naissance = $data['date_naissance'];
             $conducteur_vehicule->adresse = $data['adresse'];
             // Nouveau champ: numéro du permis
-            $conducteur_vehicule->numero_permis = $data['numero_permis'] ?? null;
-            $conducteur_vehicule->photo = $photoPath;
-            $conducteur_vehicule->permis_recto = $permisRectoPath;
-            $conducteur_vehicule->permis_verso = $permisVersoPath;
+            $conducteur_vehicule->numero_permis = $data['numero_permis'] ?? ($conducteur_vehicule->numero_permis ?? null);
+            if ($photoPath !== null) { $conducteur_vehicule->photo = $photoPath; }
+            if ($permisRectoPath !== null) { $conducteur_vehicule->permis_recto = $permisRectoPath; }
+            if ($permisVersoPath !== null) { $conducteur_vehicule->permis_verso = $permisVersoPath; }
             $conducteur_vehicule->permis_valide_le = $data['permis_valide_le'];
             $conducteur_vehicule->permis_expire_le = $data['permis_expire_le'];
             
@@ -218,8 +210,16 @@ class ConducteurVehiculeController extends Db {
                 return $result;
             }
             
-            // Récupérer l'ID du conducteur créé
+            // Récupérer l'ID du conducteur créé ou existant
             $conducteurId = $conducteur_vehicule->id();
+            
+            // Logger la création/mise à jour du conducteur véhicule
+            $this->activityLogger->logCreate(
+                $_SESSION['username'] ?? null,
+                'conducteur_vehicule',
+                $conducteurId,
+                ['nom' => $data['nom'], 'numero_permis' => $data['numero_permis']]
+            );
             
             // Enregistrement réussi du conducteur
             $result['state'] = true;
@@ -229,20 +229,7 @@ class ConducteurVehiculeController extends Db {
             ];
             $result['message'] = 'Conducteur et véhicule enregistrés avec succès';
             
-            // Vérifier et traiter les données de contravention séparément
-            $contraventionResult = $this->handleContraventionData($data, $conducteurId);
-            
-            // Si il y a eu une contravention enregistrée, mettre à jour le message
-            if ($contraventionResult['hasContravention']) {
-                if ($contraventionResult['state']) {
-                    $result['message'] = 'Conducteur, véhicule et contravention enregistrés avec succès';
-                } else {
-                    // Si la contravention a échoué, on retourne l'erreur mais le conducteur est déjà sauvé
-                    $result['state'] = false;
-                    $result['message'] = $contraventionResult['message'];
-                    return $result;
-                }
-            }
+            // Aucun enregistrement de contravention automatique
             
             return $result;
             

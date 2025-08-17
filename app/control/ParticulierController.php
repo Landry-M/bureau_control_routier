@@ -4,9 +4,16 @@ namespace Control;
 
 use Exception;
 use Model\Db;
+use Model\ActivityLogger;
 use ORM;
 
 class ParticulierController extends Db{
+    private $activityLogger;
+
+    public function __construct()
+    {
+        $this->activityLogger = new ActivityLogger();
+    }
 
     public function create($data){
 
@@ -29,6 +36,14 @@ class ParticulierController extends Db{
         $particulier->observations = $data['observations'];
         
         if($particulier->save()){
+            // Logger la création du particulier
+            $this->activityLogger->logCreate(
+                $_SESSION['username'] ?? null,
+                'particuliers',
+                $particulier->id(),
+                ['nom' => $data['nom'], 'numero_national' => $data['numero_national']]
+            );
+            
             $result['state'] = true;
             $result['message'] = $data['nom'].' a été enregistré avec succès';
             $result['id'] = $particulier->id;
@@ -41,5 +56,31 @@ class ParticulierController extends Db{
         }
 
 
-    }   
+    }  
+
+    /**
+     * Récupérer la liste des particuliers (plus récents d'abord)
+     * @return array
+     */
+    public function listAll(): array
+    {
+        try {
+            $this->getConnexion();
+            $rows = ORM::for_table('particuliers')
+                ->order_by_desc('id')
+                ->find_array();
+            
+            // Logger la consultation de la liste des particuliers
+            $this->activityLogger->logView(
+                $_SESSION['username'] ?? null,
+                'particuliers_list',
+                "Consultation de la liste des particuliers (" . count($rows) . " résultats)"
+            );
+            
+            return is_array($rows) ? $rows : [];
+        } catch (Exception $e) {
+            error_log('ParticulierController::listAll error: '.$e->getMessage());
+            return [];
+        }
+    }
 }

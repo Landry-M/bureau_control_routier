@@ -127,76 +127,6 @@
                             </div>
                         </div>
 
-                        <!-- Section Contravention -->
-                        <div class="card mb-4">
-                            <div class="card-header bg-light">
-                                <h5 class="card-title mb-0"><i class="ri-file-warning-line me-2"></i>Contravention (optionnel)</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="date_infraction" class="form-label">Date d'infraction</label>
-                                            <input type="datetime-local" name="date_infraction" id="date_infraction" class="form-control" value="<?php echo date('Y-m-d\TH:i'); ?>">
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="lieu" class="form-label">Lieu</label>
-                                            <input type="text" name="lieu" id="lieu" class="form-control" placeholder="Lieu de l'infraction">
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="type_infraction" class="form-label">Type d'infraction</label>
-                                            <input type="text" name="type_infraction" id="type_infraction" class="form-control" placeholder="Type d'infraction">
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="reference_loi" class="form-label">Référence légale</label>
-                                            <input type="text" name="reference_loi" id="reference_loi" class="form-control" placeholder="Ex: Article 123 du Code de la route">
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="row">
-                                    <div class="col-md-12">
-                                        <div class="mb-3">
-                                            <label for="description" class="form-label">Description</label>
-                                            <textarea name="description" id="description" class="form-control" rows="3" placeholder="Description détaillée de l'infraction"></textarea>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="amende" class="form-label">Montant de l'amende</label>
-                                            <div class="input-group">
-                                                <input type="number" name="amende" id="amende" class="form-control" placeholder="0" min="0" step="0.01">
-                                                <span class="input-group-text">Fc</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="payed" class="form-label">Statut de paiement</label>
-                                            <select name="payed" id="payed" class="form-select">
-                                                <option value="">-- Sélectionner --</option>
-                                                <option value="Non payé">Non payé</option>
-                                                <option value="Payé">Payé</option>
-                                                <option value="En cours">En cours</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
                     </form>
                 </div>
                 <div class="px-3 pb-3 text-center">
@@ -218,40 +148,46 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (enregistrerBtn && particulierForm) {
         enregistrerBtn.addEventListener('click', function() {
-            // Validation des champs obligatoires
-            const name = document.getElementById('name').value.trim();
-            const adresse = document.getElementById('adresse').value.trim();
-            const dateNaissance = document.getElementById('date_naissance').value;
-            const genre = document.getElementById('genre').value;
-            const numeroNational = document.getElementById('numero_national').value.trim();
+            // Validation des champs obligatoires (scopée au formulaire)
+            const nameEl = particulierForm.querySelector('#name');
+            const adresseEl = particulierForm.querySelector('#adresse');
+            const dateNaissanceEl = particulierForm.querySelector('#date_naissance');
+            const genreEl = particulierForm.querySelector('#genre');
+            const numeroNationalEl = particulierForm.querySelector('#numero_national');
+
+            const name = (nameEl?.value || '').trim();
+            const adresse = (adresseEl?.value || '').trim();
+            const dateNaissance = (dateNaissanceEl?.value || '');
+            const genre = (genreEl?.value || '');
+            const numeroNational = (numeroNationalEl?.value || '').trim();
 
             if (name === '') {
                 alert('Veuillez saisir le nom complet');
-                document.getElementById('name').focus();
+                nameEl?.focus();
                 return;
             }
 
             if (adresse === '') {
                 alert('Veuillez saisir l\'adresse');
-                document.getElementById('adresse').focus();
+                adresseEl?.focus();
                 return;
             }
 
             if (dateNaissance === '') {
                 alert('Veuillez saisir la date de naissance');
-                document.getElementById('date_naissance').focus();
+                dateNaissanceEl?.focus();
                 return;
             }
 
             if (genre === '') {
                 alert('Veuillez sélectionner le genre');
-                document.getElementById('genre').focus();
+                genreEl?.focus();
                 return;
             }
 
             if (numeroNational === '') {
                 alert('Veuillez saisir le numéro national');
-                document.getElementById('numero_national').focus();
+                numeroNationalEl?.focus();
                 return;
             }
 
@@ -272,12 +208,13 @@ document.addEventListener('DOMContentLoaded', function() {
             // }
 
             // Validation de l'email si renseigné
-            const email = document.getElementById('email').value.trim();
+            const emailEl = particulierForm.querySelector('#email');
+            const email = (emailEl?.value || '').trim();
             if (email !== '') {
                 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
                 if (!emailRegex.test(email)) {
                     alert('Veuillez saisir une adresse email valide');
-                    document.getElementById('email').focus();
+                    emailEl?.focus();
                     return;
                 }
             }
@@ -288,16 +225,16 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Formatage automatique du numéro national
-    const numeroInput = document.getElementById('numero_national');
-    if (numeroInput) {
-        numeroInput.addEventListener('input', function(e) {
-            // Ne garder que les chiffres et lettres
-            e.target.value = e.target.value.replace(/[^A-Z0-9]/g, '').substring(0, 20);
-        });
-    }
+    // const numeroInput = particulierForm ? particulierForm.querySelector('#numero_national') : null;
+    // if (numeroInput) {
+    //     numeroInput.addEventListener('input', function(e) {
+    //         // Ne garder que les chiffres et lettres
+    //         e.target.value = e.target.value.replace(/[^A-Z0-9]/g, '').substring(0, 20);
+    //     });
+    // }
 
     // Validation de la date de naissance (ne pas permettre de dates futures)
-    const dateInput = document.getElementById('date_naissance');
+    const dateInput = particulierForm ? particulierForm.querySelector('#date_naissance') : null;
     if (dateInput) {
         // Définir la date maximum à aujourd'hui
         const today = new Date();

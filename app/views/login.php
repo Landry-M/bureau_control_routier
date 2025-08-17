@@ -33,18 +33,18 @@
                 <div id="carouselExampleFade" class="carousel slide carousel-fade" data-bs-ride="carousel">
                     <div class="carousel-inner">
                         <div class="carousel-item active">
-                            <h2 class="mb-3">I love the color!</h2>
-                            <p class="lead"><i class="ri-double-quotes-l"></i> Everything you need is in this template. Love the overall look and feel. Not too flashy, and still very professional and smart.
+                            <h2 class="mb-3">Bureau de contrôle routier!</h2>
+                            <p class="lead"><i class="ri-double-quotes-l"></i>  Bienvenue sur le portail de contrôle routier.
                             </p>
                         </div>
                         <div class="carousel-item">
-                            <h2 class="mb-3">Flexibility !</h2>
-                            <p class="lead"><i class="ri-double-quotes-l"></i> Pretty nice theme, hoping you guys could add more features to this. Keep up the good work.
+                            <h2 class="mb-3">Suivi des contraventions !</h2>
+                            <p class="lead"><i class="ri-double-quotes-l"></i>  Suivi des contraventions, des accidents et des dossier de contraventions.
                             </p>
                         </div>
                         <div class="carousel-item">
-                            <h2 class="mb-3">Feature Availability!</h2>
-                            <p class="lead"><i class="ri-double-quotes-l"></i> This is a great product, helped us a lot and very quick to work with and implement.
+                            <h2 class="mb-3">Suivi des accidents !</h2>
+                            <p class="lead"><i class="ri-double-quotes-l"></i> Gestion des accidents, des dossier d'accidents.
                             </p>
                         </div>
                     </div>

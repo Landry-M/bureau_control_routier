@@ -17,6 +17,9 @@ use Control\ConducteurVehiculeController;
 use Control\AgentAccountController;
 use Control\ProfileController;
 use Control\AgentManagementController;
+use Control\AccidentController;
+use Control\LogoutController;
+use Control\SearchController;
 
 //initialisation de la superglobal SESSION
 if(!isset($_SESSION))
@@ -38,6 +41,31 @@ $router->map('GET','/',function (){
     }
 });
 
+// Recherche globale
+$router->map('GET','/search', function(){
+    if(isset($_SESSION['user'])){
+        $ctrl = new SearchController();
+        $ctrl->search();
+    } else {
+        $_SESSION['error'] = 'Vous devez être connecté pour effectuer une recherche.';
+        header('Location: /login');
+        exit;
+    }
+});
+
+$router->map('GET','/search/detail', function(){
+    if(isset($_SESSION['user'])){
+        $ctrl = new SearchController();
+        $ctrl->detail();
+    } else {
+        $_SESSION['error'] = 'Vous devez être connecté pour effectuer une recherche.';
+        header('Location: /login');
+        exit;
+    }
+});
+
+ 
+
 $router->map('GET','/login',function (){
     if(isset($_SESSION['user']) ){
         require_once 'views/home2.php';
@@ -47,14 +75,19 @@ $router->map('GET','/login',function (){
 });
 
 $router->map('GET','/logout',function (){
-    session_destroy();
+    (new LogoutController)->logout();
     require_once 'views/login.php';
 });
 
 
 $router->map('GET','/create-folder',function (){
-   
+    
     if(isset($_SESSION['user']) ){
+        // Préparer la liste des véhicules/plaque et leurs contraventions
+        // $dossierController = new DossierController();
+        // $vehiculesData = $dossierController->getVehiculesWithContraventions();
+        // $vehicules = $vehiculesData['vehicules'] ?? [];
+        // $contraventionsByVehicule = $vehiculesData['contraventionsByVehicule'] ?? [];
         require_once 'views/create-folder2.php';
     }else{
         require_once 'views/login.php';
@@ -78,12 +111,86 @@ $router->map('GET','/profile',function (){
 
 $router->map('GET','/consulter-dossier',function (){
     if(isset($_SESSION['user'])){
-       
+        $dossierController = new DossierController();
+        $data = $dossierController->getConducteursWithContraventions();
+        
+        //var_dump($data);
+        // Passer les données à la vue
+        $conducteurs = $data['conducteurs'];
+        $contraventionsByDossier = $data['contraventionsByDossier'];
+        // Préparer aussi les véhicules/plaque et leurs contraventions
+        $vehData = $dossierController->getVehiculesWithContraventions();
+        $vehicules = $vehData['vehicules'] ?? [];
+        $contraventionsByVehicule = $vehData['contraventionsByVehicule'] ?? [];
+        // Préparer la liste des particuliers
+        $partCtrl = new ParticulierController();
+        $particuliers = $partCtrl->listAll();
+        // Préparer les entreprises et leurs contraventions
+        $entData = $dossierController->getEntreprisesWithContraventions();
+        $entreprises = $entData['entreprises'] ?? [];
+        $contraventionsByEntreprise = $entData['contraventionsByEntreprise'] ?? [];
+        
         require_once 'views/consulter-dossier2.php';
     } else {
         $_SESSION['error'] = 'Vous devez être connecté pour accéder à cette page.';
         header('Location: /login');
         exit;
+    }
+});
+
+$router->map('GET','/rapport-accidents',function (){
+    if(isset($_SESSION['user'])){
+        // Récupérer les données des accidents via le contrôleur
+        $accidentController = new AccidentController();
+        $accidentsResult = $accidentController->getAll();
+        
+        if($accidentsResult['state']) {
+            $accidents = $accidentsResult['data'];
+        } else {
+            $accidents = [];
+            $_SESSION['error'] = 'Erreur lors du chargement des accidents: ' . $accidentsResult['message'];
+        }
+        
+        require_once 'views/rapport-accidents.php';
+    } else {
+        $_SESSION['error'] = 'Vous devez être connecté pour accéder à cette page.';
+        header('Location: /login');
+        exit;
+    }
+});
+
+$router->map('GET','/rapport-activites',function (){
+    if(isset($_SESSION['user'])){
+        require_once 'views/activities-log.php';
+    } else {
+        $_SESSION['error'] = 'Vous devez être connecté pour accéder à cette page.';
+        header('Location: /login');
+        exit;
+    }
+});
+
+// API: contraventions d'un particulier (JSON)
+$router->map('GET','/particulier/[i:id]/contraventions', function($id){
+    header('Content-Type: application/json');
+    if(!isset($_SESSION['user'])){
+        http_response_code(401);
+        echo json_encode(['ok'=>false,'error'=>'Unauthorized']);
+        return;
+    }
+    try {
+        // Utiliser le numero_national si fourni en query pour éviter une dépendance directe à ORM ici
+        $numero = isset($_GET['numero']) ? (string)$_GET['numero'] : '';
+        if ($numero === '') {
+            // Pas de numero fourni -> renvoyer liste vide (le front peut réessayer ou fournir le numero)
+            echo json_encode(['ok'=>true,'data'=>[]]);
+            return;
+        }
+        $ctrl = new \Control\ContraventionController();
+        $rows = $ctrl->getByDossierIdAndType($numero, 'particuliers');
+        echo json_encode(['ok'=>true,'data'=>$rows]);
+    } catch (\Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'Server error']);
     }
 });
 
@@ -99,6 +206,29 @@ $router->map('POST','/contact',function (){
     require_once 'views/contact.php';
 });
 
+$router->map('POST','/contravention/update-payed', function(){
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) {
+        http_response_code(401);
+        echo json_encode(['ok'=>false, 'error'=>'Unauthorized']);
+        return;
+    }
+    try {
+        $id = $_POST['id'] ?? null;
+        $payed = $_POST['payed'] ?? null;
+        if ($id === null) {
+            http_response_code(400);
+            echo json_encode(['ok'=>false, 'error'=>'Paramètre id manquant']);
+            return;
+        }
+        $ctrl = new \Control\ContraventionController();
+        $res = $ctrl->updatePayed($id, $payed);
+        echo json_encode($res);
+    } catch (\Exception $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    }
+});
 
 $router->map('POST','/login',function (){
     $result = (new UsersController)->login($_POST['username'], $_POST['password']);
@@ -144,25 +274,9 @@ $router->map('POST','/create-entreprise',function (){
             
             // Check if enterprise creation was successful
             if ($entrepriseResult['state'] === true) {
-                $entrepriseId = $entrepriseResult['data']->id();
-                
-                // Check if contravention data is provided and create contravention record
-                if (!empty($_POST['lieu']) || !empty($_POST['type_infraction']) || !empty($_POST['description']) || !empty($_POST['reference_loi']) || !empty($_POST['amende'])) {
-                    
-                    // Prepare contravention data with enterprise ID as dossier_id
-                    $contraventionData = $_POST;
-                    $contraventionData['dossier_id'] = $entrepriseId;
-                    $contraventionData['type_dossier'] = 'entreprises'; // Table name source
-                    
-                    // Create contravention record
-                    $result = (new ContraventionsController)->create($contraventionData);
-                }else{
-                    $result['state'] = true;
-                    $result['message'] = $entrepriseResult['message'];
-                }
+                $_SESSION['success'] = $entrepriseResult['message'] ?? "Entreprise enregistrée avec succès";
             } else {
-                $result['state'] = false;
-                $result['message'] = $entrepriseResult['message'];
+                $_SESSION['error'] = $entrepriseResult['message'] ?? "Échec de l'enregistrement de l'entreprise";
             }
             
             require_once 'views/create-folder2.php';
@@ -179,81 +293,38 @@ $router->map('POST','/create-entreprise',function (){
 }); 
 
 $router->map('POST','/create-particulier',function (){
-    
     if(isset($_SESSION['user']) ){
-        
         try {
-            // Create particulier record first
             $particulierResult = (new ParticulierController)->create($_POST);
-            
-            // Check if particulier creation was successful
             if ($particulierResult['state'] === true) {
-                $particulierId = $particulierResult['id'];
-                
-                // Check if contravention data is provided and create contravention record
-                if ( !empty($_POST['lieu']) || !empty($_POST['type_infraction']) || !empty($_POST['description']) || !empty($_POST['reference_loi']) || !empty($_POST['amende'])) {
-                    
-                    // Prepare contravention data with particulier ID as dossier_id
-                    $contraventionData = $_POST;
-                    $contraventionData['dossier_id'] = $particulierId;
-                    $contraventionData['type_dossier'] = 'particuliers'; // Table name source
-                    
-                    // Create contravention record
-                    $result = (new ContraventionsController)->create($contraventionData);
-                }else{
-                    $result['state'] = true;
-                    $result['message'] = $particulierResult['data']['nom']." a été enregistrer avec succes ";
-                }
-
+                $_SESSION['success'] = ($particulierResult['data']['nom'] ?? 'Particulier')." a été enregistré avec succès";
             } else {
-                $result['state'] = false;
-                $result['message'] = $particulierResult['message'];
+                $_SESSION['error'] = $particulierResult['message'];
             }
-            
             require_once 'views/create-folder2.php';
-            
         } catch (Exception $e) {
-            // Handle errors
             $_SESSION['error'] = $e->getMessage();
             require_once 'views/create-folder2.php';
         }
-        
-    }else{
+    } else {
         require_once 'views/login.php';
     }
-}); 
+});
 
 $router->map('POST','/create-vehicule-plaque',function (){
-    
-    if(isset($_SESSION['user']) ){
-        
-        try {
-            // Create vehicle record first
-            $vehiculeId = (new VehiculePlaqueController)->create($_POST);
-            
-            // Check if contravention data is provided and create contravention record
-            if (!empty($_POST['lieu']) || !empty($_POST['type_infraction']) || 
-                !empty($_POST['description']) || !empty($_POST['reference_loi']) || !empty($_POST['amende'])) {
-                
-                // Prepare contravention data with vehicle ID as dossier_id
-                $contraventionData = $_POST;
-                $contraventionData['dossier_id'] = $vehiculeId;
-                $contraventionData['type_dossier'] = 'vehicule_plaque'; // Table name source
-                
-                // Create contravention record
-                $result = (new ContraventionsController)->create($contraventionData);
-            } else {
-            $_SESSION['error'] = "Vehicule enregistrer avec succes ";
-            require_once 'views/create-folder2.php';
-            }
-        } catch (Exception $e) {
-            // Handle errors
-            $_SESSION['error'] = $e->getMessage();
-            require_once 'views/create-folder2.php';
-        }
-        
-    }else{
+    if (!isset($_SESSION['user'])) {
         require_once 'views/login.php';
+        return;
+    }
+
+    try {
+        // Création du véhicule
+        (new VehiculePlaqueController)->create($_POST);
+        $_SESSION['success'] = 'Véhicule enregistré avec succès';
+        require_once 'views/create-folder2.php';
+    } catch (Exception $e) {
+        $_SESSION['error'] = $e->getMessage();
+        require_once 'views/create-folder2.php';
     }
 }); 
 
@@ -263,13 +334,13 @@ $router->map('POST','/create-conducteur-vehicule',function (){
         
         try {
             // Appeler le contrôleur avec les données POST et les fichiers
-            $result = (new ConducteurVehiculeController)->create($_POST, $_FILES);
+            $resultCreate = (new ConducteurVehiculeController)->create($_POST, $_FILES);
             
-            if($result['state'] == true){
-                $_SESSION['success'] = $result['message'];
+            if($resultCreate['state'] == true){
+                $_SESSION['success'] = $resultCreate['message'];
                 require_once 'views/create-folder2.php';
             }else{
-                $_SESSION['error'] = $result['message'];
+                $_SESSION['error'] = $resultCreate['message'];
                 require_once 'views/create-folder2.php';
             }
         } catch (Exception $e) {
@@ -361,6 +432,51 @@ $router->map('POST','/toggle-agent-status',function (){
         echo json_encode(['success' => false, 'message' => 'Accès non autorisé']);
     }
 });
+
+$router->map('POST','/create-accident',function (){
+    // Supprimer l'affichage des erreurs PHP pour éviter la pollution HTML
+    error_reporting(0);
+    ini_set('display_errors', 0);
+    
+    // Démarrer la capture de sortie
+    ob_start();
+    
+    if(!isset($_SESSION['user'])){
+        ob_clean();
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(401);
+        echo json_encode(['state' => false, 'message' => 'Vous devez être connecté pour enregistrer un accident']);
+        return;
+    }
+    
+    try {
+        $controller = new AccidentController();
+        $result = $controller->create($_POST, $_FILES);
+        
+        // Nettoyer tout output capturé (erreurs PHP)
+        ob_clean();
+        
+        // S'assurer que le résultat est valide avant de l'envoyer
+        if (!is_array($result)) {
+            throw new Exception('Réponse invalide du contrôleur');
+        }
+        
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($result);
+        
+    } catch (Exception $e) {
+        // Nettoyer tout output capturé
+        ob_clean();
+        
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(500);
+        echo json_encode([
+            'state' => false, 
+            'message' => 'Erreur serveur: ' . $e->getMessage()
+        ]);
+    }
+});
+
 
 //----------------- routes api
 

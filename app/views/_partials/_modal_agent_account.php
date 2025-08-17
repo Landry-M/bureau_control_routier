@@ -53,6 +53,59 @@
                             </div>
                         </div>
 
+                        <!-- Planning de connexion -->
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="mb-2">
+                                    <label class="form-label fw-bold">Plage autorisée de connexion (optionnel)</label>
+                                    <small class="text-muted d-block">Sélectionnez les jours et les heures pendant lesquels l'agent est autorisé à se connecter.</small>
+                                </div>
+                                <div class="table-responsive border rounded p-2">
+                                    <table class="table table-sm align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 140px;">Jour</th>
+                                                <th style="width: 110px;">Autoriser</th>
+                                                <th style="width: 180px;">Heure début</th>
+                                                <th style="width: 180px;">Heure fin</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php
+                                                $days = [
+                                                    'mon' => 'Lundi',
+                                                    'tue' => 'Mardi',
+                                                    'wed' => 'Mercredi',
+                                                    'thu' => 'Jeudi',
+                                                    'fri' => 'Vendredi',
+                                                    'sat' => 'Samedi',
+                                                    'sun' => 'Dimanche'
+                                                ];
+                                                foreach ($days as $key => $label):
+                                            ?>
+                                            <tr>
+                                                <td class="fw-medium"><?php echo $label; ?></td>
+                                                <td>
+                                                    <div class="form-check form-switch">
+                                                        <input class="form-check-input" type="checkbox" id="sched_<?php echo $key; ?>" name="schedule[<?php echo $key; ?>][enabled]" value="1">
+                                                        <label class="form-check-label" for="sched_<?php echo $key; ?>">Autoriser</label>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <input type="time" class="form-control form-control-sm" name="schedule[<?php echo $key; ?>][start]" value="08:00">
+                                                </td>
+                                                <td>
+                                                    <input type="time" class="form-control form-control-sm" name="schedule[<?php echo $key; ?>][end]" value="17:00">
+                                                </td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <small class="text-muted">Laissez tout décoché pour ne pas restreindre les horaires de connexion.</small>
+                            </div>
+                        </div>
+
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="mb-3">

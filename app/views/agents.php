@@ -230,6 +230,14 @@
                 <div class="modal-body">
                     <form id="agent-details-form" method="POST" action="/update-agent">
                         <input type="hidden" id="agent-id" name="agent_id">
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="edit-mode-switch">
+                                <label class="form-check-label" for="edit-mode-switch">
+                                    Mode édition
+                                </label>
+                            </div>
+                        </div>
                         
                         <div class="row">
                             <div class="col-md-6">
@@ -283,12 +291,56 @@
                             </div>
                         </div>
 
-                        <div class="mb-3">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="edit-mode-switch">
-                                <label class="form-check-label" for="edit-mode-switch">
-                                    Mode édition
-                                </label>
+                        <!-- Planning de connexion (optionnel) -->
+                        <h5 class="mb-3 text-uppercase bg-light p-2"><i class="ri-time-line me-1"></i> Planning de connexion (optionnel)</h5>
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="mb-2">
+                                    <label class="form-label fw-bold">Jours et heures autorisés pour la connexion</label>
+                                    <small class="text-muted d-block">Laissez tout décoché pour ne pas restreindre les horaires de connexion.</small>
+                                </div>
+                                <div class="table-responsive border rounded p-2">
+                                    <table class="table table-sm align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 140px;">Jour</th>
+                                                <th style="width: 110px;">Autoriser</th>
+                                                <th style="width: 180px;">Heure début</th>
+                                                <th style="width: 180px;">Heure fin</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php
+                                                $days = [
+                                                    'mon' => 'Lundi',
+                                                    'tue' => 'Mardi',
+                                                    'wed' => 'Mercredi',
+                                                    'thu' => 'Jeudi',
+                                                    'fri' => 'Vendredi',
+                                                    'sat' => 'Samedi',
+                                                    'sun' => 'Dimanche'
+                                                ];
+                                                foreach ($days as $key => $label):
+                                            ?>
+                                            <tr>
+                                                <td class="fw-medium"><?php echo $label; ?></td>
+                                                <td>
+                                                    <div class="form-check form-switch">
+                                                        <input class="form-check-input schedule-field" type="checkbox" id="agent_sched_<?php echo $key; ?>" name="schedule[<?php echo $key; ?>][enabled]" value="1" disabled>
+                                                        <label class="form-check-label" for="agent_sched_<?php echo $key; ?>">Autoriser</label>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <input type="time" class="form-control form-control-sm schedule-field" id="agent_sched_<?php echo $key; ?>_start" name="schedule[<?php echo $key; ?>][start]" value="08:00" disabled>
+                                                </td>
+                                                <td>
+                                                    <input type="time" class="form-control form-control-sm schedule-field" id="agent_sched_<?php echo $key; ?>_end" name="schedule[<?php echo $key; ?>][end]" value="17:00" disabled>
+                                                </td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
 
@@ -349,13 +401,49 @@
                         document.getElementById('agent-status').value = agent.status;
                         document.getElementById('agent-created').value = new Date(agent.created_at).toLocaleDateString('fr-FR');
 
-                        // Sauvegarder les données originales
+                        // Pré-remplir le planning si disponible
+                        try {
+                            let sched = agent.login_schedule || null;
+                            if (typeof sched === 'string' && sched.length) {
+                                sched = JSON.parse(sched);
+                            }
+                            const days = ['mon','tue','wed','thu','fri','sat','sun'];
+                            days.forEach(d => {
+                                const cfg = (sched && typeof sched === 'object') ? (sched[d] || {}) : {};
+                                const enabled = !!cfg.enabled;
+                                const start = (cfg.start && /^\d{2}:\d{2}$/.test(cfg.start)) ? cfg.start : '08:00';
+                                const end   = (cfg.end && /^\d{2}:\d{2}$/.test(cfg.end))   ? cfg.end   : '17:00';
+                                const cb = document.getElementById(`agent_sched_${d}`);
+                                const startEl = document.getElementById(`agent_sched_${d}_start`);
+                                const endEl = document.getElementById(`agent_sched_${d}_end`);
+                                if (cb) cb.checked = enabled;
+                                if (startEl) startEl.value = start;
+                                if (endEl) endEl.value = end;
+                            });
+                        } catch(e) { /* ignore */ }
+
+                        // Sauvegarder les données originales (y compris planning)
                         originalAgentData = {
                             username: agent.username,
                             matricule: agent.matricule,
                             poste: agent.poste || '',
                             role: agent.role,
-                            status: agent.status
+                            status: agent.status,
+                            schedule: (function(){
+                                const days = ['mon','tue','wed','thu','fri','sat','sun'];
+                                const s = {};
+                                days.forEach(d => {
+                                    const cb = document.getElementById(`agent_sched_${d}`);
+                                    const startEl = document.getElementById(`agent_sched_${d}_start`);
+                                    const endEl = document.getElementById(`agent_sched_${d}_end`);
+                                    s[d] = {
+                                        enabled: cb ? cb.checked : false,
+                                        start: startEl ? startEl.value : '08:00',
+                                        end: endEl ? endEl.value : '17:00'
+                                    };
+                                });
+                                return s;
+                            })()
                         };
 
                         // Réinitialiser le mode édition
@@ -425,6 +513,16 @@
                 }
             });
 
+            // Activer/désactiver les champs de planning
+            document.querySelectorAll('.schedule-field').forEach(el => {
+                el.disabled = !isEditMode;
+                if (isEditMode) {
+                    el.classList.add('border-primary');
+                } else {
+                    el.classList.remove('border-primary');
+                }
+            });
+
             saveButtons.style.display = isEditMode ? 'block' : 'none';
         }
 
@@ -436,6 +534,20 @@
             document.getElementById('agent-poste').value = originalAgentData.poste;
             document.getElementById('agent-role').value = originalAgentData.role;
             document.getElementById('agent-status').value = originalAgentData.status;
+
+            // Restaurer le planning
+            if (originalAgentData.schedule) {
+                const days = ['mon','tue','wed','thu','fri','sat','sun'];
+                days.forEach(d => {
+                    const s = originalAgentData.schedule[d] || {};
+                    const cb = document.getElementById(`agent_sched_${d}`);
+                    const startEl = document.getElementById(`agent_sched_${d}_start`);
+                    const endEl = document.getElementById(`agent_sched_${d}_end`);
+                    if (cb) cb.checked = !!s.enabled;
+                    if (startEl) startEl.value = s.start || '08:00';
+                    if (endEl) endEl.value = s.end || '17:00';
+                });
+            }
 
             // Désactiver le mode édition
             document.getElementById('edit-mode-switch').checked = false;

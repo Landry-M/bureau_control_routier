@@ -9,6 +9,39 @@
             <div class="p-1">
                 <div class="modal-body px-3 pt-3 pb-0">
                     <form id="conducteur-form" method="POST" action="/create-conducteur-vehicule" enctype="multipart/form-data">
+                        <div class="row mb-3">
+                            <div class="col-md-6 d-flex align-items-center">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="is_new_conducteur" name="is_new_conducteur" value="1" checked>
+                                    <label class="form-check-label ms-2" for="is_new_conducteur">Nouveau conducteur</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6" id="existing-conducteur-section" style="display: none;">
+                                <label for="existing_conducteur_id" class="form-label">Sélectionner un conducteur existant</label>
+                                <input type="text" id="existing_conducteur_search" class="form-control mb-2" placeholder="Rechercher (nom ou numéro de permis)...">
+                                <select class="form-select" id="existing_conducteur_id" name="existing_conducteur_id">
+                                    <option value="">-- Choisir --</option>
+<?php 
+    try {
+        $conducteurs = \ORM::for_table('conducteur_vehicule')
+            ->select_many('id','nom','numero_permis')
+            ->order_by_asc('nom')
+            ->find_many();
+        foreach ($conducteurs as $c) {
+            $label = trim(($c->nom ?? '') . ' - ' . ($c->numero_permis ?? ''));
+            $cid = is_callable([$c,'id']) ? $c->id() : ($c->id ?? null);
+?>
+                                    <option value="<?= htmlspecialchars($cid, ENT_QUOTES) ?>">
+                                        <?= htmlspecialchars($label, ENT_QUOTES) ?>
+                                    </option>
+<?php   }
+    } catch (\Exception $e) { /* silencieux dans la vue */ }
+?>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="new-conducteur-section">
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="mb-3">
@@ -94,84 +127,6 @@
                             </div>
                         </div>
 
-                        <!-- Section Contravention (Optionnelle) -->
-                        <div class="card mb-4 mt-4">
-                            <div class="card-header bg-light">
-                                <h5 class="card-title mb-0"><i class="ri-file-warning-line me-2"></i>Contravention (optionnel)</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="date_infraction" class="form-label">Date d'infraction</label>
-                                            <input type="datetime-local" name="date_infraction" id="date_infraction" class="form-control">
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="lieu" class="form-label">Lieu</label>
-                                            <input type="text" name="lieu" id="lieu" class="form-control" placeholder="Lieu de l'infraction">
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="type_infraction" class="form-label">Type d'infraction</label>
-                                            <input type="text" name="type_infraction" id="type_infraction" class="form-control" placeholder="Type d'infraction">
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="reference_loi" class="form-label">Référence légale</label>
-                                            <input type="text" name="reference_loi" id="reference_loi" class="form-control" placeholder="Référence légale">
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="amende" class="form-label">Montant de l'amende</label>
-                                            <div class="input-group">
-                                                <input type="number" name="amende" id="amende" class="form-control" placeholder="Montant">
-                                                <span class="input-group-text">FC</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="payed" class="form-label">Statut du paiement</label>
-                                            <select name="payed" id="payed" class="form-select">
-                                                <option value="Non payé">Non payé</option>
-                                                <option value="Payé">Payé</option>
-                                                <option value="En cours">En cours</option>  
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="row">
-                                    <div class="col-12">
-                                        <div class="mb-3">
-                                            <label for="description" class="form-label">Description de l'infraction</label>
-                                            <textarea name="description" id="description" class="form-control" rows="2" placeholder="Détails de l'infraction"></textarea>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- <div class="row">
-                                    <div class="col-12">
-                                        <div class="mb-3">
-                                            <label for="contravention_photos" class="form-label">Photos de la contravention (optionnel)</label>
-                                            <input type="file" name="contravention_photos[]" id="contravention_photos" class="form-control" multiple accept="image/*">
-                                            <small class="text-muted">Formats acceptés: JPG, PNG, JPEG (max 2MB par fichier)</small>
-                                        </div>
-                                    </div>
-                                </div> -->
-
-                            </div>
                         </div>
 
                         <div class="px-3 pb-3 text-center">
@@ -249,6 +204,87 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
+    // Toggle affichage nouveau vs existant
+    const switchNew = document.getElementById('is_new_conducteur');
+    const newSection = document.getElementById('new-conducteur-section');
+    const existingSection = document.getElementById('existing-conducteur-section');
+    const existingSelect = document.getElementById('existing_conducteur_id');
+
+    const newFields = [
+        'nom','date_naissance','adresse','numero_permis',
+        'permis_valide_le','permis_expire_le','permis_recto','permis_verso'
+    ];
+
+    function setRequiredForNew(isNew) {
+        newFields.forEach(function(id){
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (isNew) {
+                // Rétablir required pour les champs nécessaires
+                if (['nom','date_naissance','adresse','numero_permis','permis_valide_le','permis_expire_le','permis_recto','permis_verso'].includes(id)) {
+                    el.setAttribute('required','required');
+                }
+            } else {
+                el.removeAttribute('required');
+            }
+        });
+        if (existingSelect) {
+            if (isNew) {
+                existingSelect.removeAttribute('required');
+            } else {
+                existingSelect.setAttribute('required','required');
+            }
+        }
+    }
+
+    function toggleSections() {
+        const isNew = switchNew && switchNew.checked;
+        if (isNew) {
+            newSection && (newSection.style.display = 'block');
+            existingSection && (existingSection.style.display = 'none');
+        } else {
+            newSection && (newSection.style.display = 'none');
+            existingSection && (existingSection.style.display = 'block');
+        }
+        setRequiredForNew(isNew);
+    }
+
+    if (switchNew) {
+        switchNew.addEventListener('change', toggleSections);
+        // Init on load
+        toggleSections();
+    }
+
+    // Recherche dans le select des conducteurs existants
+    (function initExistingConducteurSearch() {
+        const sel = document.getElementById('existing_conducteur_id');
+        const input = document.getElementById('existing_conducteur_search');
+        if (!sel) return;
+
+        // Si Select2 est dispo, on l'utilise et on masque l'input custom
+        if (window.jQuery && jQuery.fn && typeof jQuery.fn.select2 === 'function') {
+            jQuery(sel).select2({
+                width: '100%',
+                placeholder: '-- Choisir --',
+                allowClear: true
+            });
+            if (input) input.style.display = 'none';
+            return;
+        }
+
+        // Fallback: filtre simple via input text
+        if (input) {
+            input.addEventListener('input', function () {
+                const q = this.value.toLowerCase();
+                Array.from(sel.options).forEach(function (opt, idx) {
+                    if (idx === 0) return; // garder placeholder
+                    const txt = opt.text.toLowerCase();
+                    opt.style.display = txt.indexOf(q) !== -1 ? '' : 'none';
+                });
+            });
+        }
+    })();
+
     // Validation du formulaire avant soumission
     const conducteurForm = document.getElementById('conducteur-form');
     if (conducteurForm) {

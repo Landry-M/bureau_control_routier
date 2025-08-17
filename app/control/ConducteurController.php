@@ -4,9 +4,16 @@ namespace Control;
 
 use Exception;
 use Model\Db;
+use Model\ActivityLogger;
 use ORM;
 
 class ConducteurController extends Db {
+    private $activityLogger;
+
+    public function __construct()
+    {
+        $this->activityLogger = new ActivityLogger();
+    }
 
     public function create($data, $files) {
         $this->getConnexion();
@@ -76,6 +83,14 @@ class ConducteurController extends Db {
             $conducteur->created_at = date('Y-m-d H:i:s');
             
             if ($conducteur->save()) {
+                // Logger la création du conducteur
+                $this->activityLogger->logCreate(
+                    $_SESSION['username'] ?? null,
+                    'conducteurs',
+                    $conducteur->id(),
+                    ['nom' => $data['nom'], 'date_naissance' => $data['date_naissance']]
+                );
+                
                 return [
                     'state' => true,
                     'message' => 'Le conducteur ' . $data['nom'] . ' a été enregistré avec succès.',

@@ -3,11 +3,18 @@
 namespace Control;
 
 use Model\Db;
+use Model\ActivityLogger;
 use ORM;
 use Exception;  
 
 class VehiculePlaqueController extends Db
 {
+    private $activityLogger;
+
+    public function __construct()
+    {
+        $this->activityLogger = new ActivityLogger();
+    }
     public function create($data)
     {
         $this->getConnexion();
@@ -21,8 +28,10 @@ class VehiculePlaqueController extends Db
         // Vehicle information
         $vehicule_plaque->images = json_encode($imagePaths); // Store image paths as JSON
         $vehicule_plaque->marque = $data['marque'];
+        $vehicule_plaque->modele = $data['modele'] ?? null;
         $vehicule_plaque->annee = $data['annee'];
         $vehicule_plaque->couleur = $data['couleur'];
+        $vehicule_plaque->numero_chassis = $data['numero_chassis'] ?? null;
         
         // License plate information
         $vehicule_plaque->plaque = $data['plaque'];
@@ -37,6 +46,14 @@ class VehiculePlaqueController extends Db
         
         $vehicule_plaque->save();
         
+        // Logger la création du véhicule
+        $this->activityLogger->logCreate(
+            $_SESSION['username'] ?? null,
+            'vehicule_plaque',
+            $vehicule_plaque->id(),
+            ['marque' => $data['marque'], 'plaque' => $data['plaque']]
+        );
+        
         return $vehicule_plaque->id();
     }
     
@@ -47,12 +64,12 @@ class VehiculePlaqueController extends Db
      */
     private function handleImageUploads($files)
     {
-        $uploadDir = 'assets/images/';
+        $uploadDir = 'uploads/vehicules/';
         $imagePaths = [];
         
         // Create directory if it doesn't exist
         if (!is_dir($uploadDir)) {
-            mkdir($uploadDir, 0755, true);
+            mkdir($uploadDir, 0777, true);
         }
         
         // Check if files were uploaded
@@ -61,7 +78,7 @@ class VehiculePlaqueController extends Db
         }
         
         $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
-        $maxFileSize = 5 * 1024 * 1024; // 5MB max per file
+        $maxFileSize = 8 * 1024 * 1024; // 8MB max per file (aligné avec le frontend)
         
         // Process each uploaded file
         for ($i = 0; $i < count($files['name']); $i++) {
@@ -83,7 +100,7 @@ class VehiculePlaqueController extends Db
             
             // Validate file size
             if ($files['size'][$i] > $maxFileSize) {
-                throw new Exception('Fichier trop volumineux: ' . $files['name'][$i] . '. Taille maximum: 5MB');
+                throw new Exception('Fichier trop volumineux: ' . $files['name'][$i] . '. Taille maximum: 8MB');
             }
             
             // Generate unique filename

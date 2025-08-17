@@ -3,6 +3,7 @@
 namespace Control;
 
 use Model\Db;
+use Model\ActivityLogger;
 use ORM;
 use Exception;
 
@@ -137,7 +138,39 @@ class ProfileController extends Db{
             if ($updatePassword) {
                 $user->password = md5($_POST['new_password']);
             }
-            
+
+            // Planning de connexion (optionnel)
+            if (isset($_POST['schedule']) && is_array($_POST['schedule'])) {
+                $daysMap = [
+                    'mon' => 'Lundi',
+                    'tue' => 'Mardi',
+                    'wed' => 'Mercredi',
+                    'thu' => 'Jeudi',
+                    'fri' => 'Vendredi',
+                    'sat' => 'Samedi',
+                    'sun' => 'Dimanche',
+                ];
+                $normalized = [];
+                foreach ($daysMap as $key => $label) {
+                    $enabled = isset($_POST['schedule'][$key]['enabled']) && (string)$_POST['schedule'][$key]['enabled'] === '1';
+                    $start = $_POST['schedule'][$key]['start'] ?? '00:00';
+                    $end   = $_POST['schedule'][$key]['end'] ?? '23:59';
+                    if (!preg_match('/^\d{2}:\d{2}$/', (string)$start)) { $start = '00:00'; }
+                    if (!preg_match('/^\d{2}:\d{2}$/', (string)$end))   { $end   = '23:59'; }
+                    $normalized[$key] = [
+                        'enabled' => $enabled,
+                        'start' => $start,
+                        'end' => $end,
+                    ];
+                }
+                try {
+                    $user->login_schedule = json_encode($normalized, JSON_UNESCAPED_UNICODE);
+                } catch (Exception $e) {
+                    // Si la colonne n'existe pas encore, ignorer silencieusement; la migration l'ajoutera
+                    error_log('[ProfileController] login_schedule non enregistré: ' . $e->getMessage());
+                }
+            }
+
             $user->updated_at = date('Y-m-d H:i:s');
             
             // Sauvegarder les modifications
@@ -158,6 +191,29 @@ class ProfileController extends Db{
                 // Si le mot de passe a été changé, ajouter un message spécifique
                 if ($updatePassword) {
                     $_SESSION['success'] .= ' Votre mot de passe a également été modifié.';
+                }
+
+                // Logger la mise à jour du profil
+                try {
+                    $logger = new ActivityLogger();
+                    $logger->logUpdate(
+                        $_SESSION['user']['username'] ?? null,
+                        'users',
+                        $_SESSION['user']['id'] ?? null,
+                        null,
+                        [
+                            'username' => $user->username,
+                            'telephone' => $user->telephone,
+                            // Inclure les champs superadmin si applicables
+                            'matricule' => $_SESSION['user']['role'] == 'superadmin' ? $user->matricule : null,
+                            'poste' => $_SESSION['user']['role'] == 'superadmin' ? $user->poste : null,
+                            'role' => $_SESSION['user']['role'] == 'superadmin' ? $user->role : null,
+                            'password_changed' => $updatePassword,
+                            'login_schedule_updated' => isset($_POST['schedule']) && is_array($_POST['schedule'])
+                        ]
+                    );
+                } catch (Exception $e) {
+                    error_log("[ProfileController] Erreur lors du logging d'update profil: " . $e->getMessage());
                 }
             } else {
                 $_SESSION['error'] = 'Erreur lors de la mise à jour du profil.';

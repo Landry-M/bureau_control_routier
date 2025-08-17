@@ -3,11 +3,18 @@
 namespace Control;
 
 use Model\Db;
+use Model\ActivityLogger;
 use ORM;
 use Exception;  
 
 class EntrepriseController extends Db
 {
+    private $activityLogger;
+
+    public function __construct()
+    {
+        $this->activityLogger = new ActivityLogger();
+    }
     public function create($data)
     {
         $this->getConnexion();
@@ -25,6 +32,14 @@ class EntrepriseController extends Db
         $entreprise->observations = $data['observations'];
         
         if($entreprise->save() ) {
+            // Logger la création de l'entreprise
+            $this->activityLogger->logCreate(
+                $_SESSION['username'] ?? null,
+                'entreprises',
+                $entreprise->id(),
+                ['designation' => $data['designation'], 'rccm' => $data['numero_siret']]
+            );
+            
             $result['state'] = true;
             $result['data'] = $entreprise;
             $result['message'] = "L'entreprise ". $data['designation']." a été enregistrée avec succès";

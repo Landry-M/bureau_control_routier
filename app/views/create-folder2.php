@@ -56,6 +56,16 @@
                             </div>
                         </div>
 
+                        <?php if(isset($_SESSION['success'])){ ?>
+                            <div class="row text-center">
+                                <div class="col-md-12 ">
+                                    <div class="alert alert-success">
+                                        <?php echo $_SESSION['success']; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php } unset($_SESSION['success']); ?>
+                        
                         <?php if(isset($result)){ ?>
                             <div class="row text-center">
                                 <div class="col-md-12 ">
@@ -64,7 +74,7 @@
                                     </div>
                                 </div>
                             </div>
-                        <?php } unset($result); ?>
+                        <?php } unset($result); unset($_SESSION['success']); ?>
 
                         <?php if(isset($_SESSION['error'])){ ?>
                             <div class="row text-center">
@@ -75,6 +85,8 @@
                                 </div>
                             </div>
                         <?php } unset($_SESSION['error']); ?>
+
+                     
 
                         <div class="row row-cols-1 row-cols-xxl-6 row-cols-lg-3 row-cols-md-2">
                             <div class="col">
@@ -191,6 +203,41 @@
 
 
                         </div> <!-- end row -->
+
+                        <!-- Modal détails véhicule -->
+                        <div class="modal fade" id="vehiculeDetailsModal" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog modal-lg">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title"><i class="ri-car-line me-2"></i>Détails du véhicule</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <ul class="nav nav-tabs" role="tablist">
+                                            <li class="nav-item" role="presentation">
+                                                <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#veh-info" type="button" role="tab">Informations</button>
+                                            </li>
+                                        </ul>
+                                        <div class="tab-content pt-3">
+                                            <div class="tab-pane fade show active" id="veh-info" role="tabpanel">
+                                                <div class="row g-2">
+                                                    <div class="col-md-6"><strong>Marque:</strong> <span id="md-marque"></span></div>
+                                                    <div class="col-md-3"><strong>Année:</strong> <span id="md-annee"></span></div>
+                                                    <div class="col-md-3"><strong>Couleur:</strong> <span id="md-couleur"></span></div>
+                                                    <div class="col-md-4"><strong>Plaque:</strong> <span id="md-plaque"></span></div>
+                                                    <div class="col-md-4"><strong>Valide le:</strong> <span id="md-valide"></span></div>
+                                                    <div class="col-md-4"><strong>Expire le:</strong> <span id="md-expire"></span></div>
+                                                    <div class="col-12"><strong>Assurance:</strong> <span id="md-assu"></span></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Fermer</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
 
                       
                     </div>
@@ -407,6 +454,71 @@
 
         <!-- Vendor js -->
         <script src="assets/js/vendor.min.js"></script>
+        <script>
+        (function(){
+            // Filtre et tri
+            const tbl = document.getElementById('vehicules-table');
+            const tbody = tbl ? tbl.querySelector('tbody') : null;
+            const filterInput = document.getElementById('veh-filter');
+            const sortSelect = document.getElementById('veh-sort');
+
+            function rowKey(tr, field){
+                const get = (sel)=> (tr.querySelector(sel)?.textContent || '').toLowerCase();
+                switch(field){
+                    case 'marque': return get('.veh-marque');
+                    case 'plaque': return get('.veh-plaque');
+                    case 'id': return parseInt(tr.getAttribute('data-veh-id')||'0',10);
+                    default: return get('.veh-marque');
+                }
+            }
+            function applyFilter(){
+                if (!tbody) return;
+                const q = (filterInput?.value || '').toLowerCase().trim();
+                Array.from(tbody.querySelectorAll('tr')).forEach(tr=>{
+                    const text = [
+                        tr.querySelector('.veh-marque')?.textContent,
+                        tr.querySelector('.veh-plaque')?.textContent,
+                        tr.querySelector('.veh-couleur')?.textContent
+                    ].join(' ').toLowerCase();
+                    tr.style.display = q && !text.includes(q) ? 'none' : '';
+                });
+            }
+            function renumber(){
+                if (!tbody) return;
+                let i=1; Array.from(tbody.querySelectorAll('tr')).forEach(tr=>{
+                    if (tr.style.display==='none') return; tr.querySelector('td:first-child').textContent = i++;
+                });
+            }
+            function applySort(){
+                if (!tbody) return;
+                const mode = sortSelect?.value; if (!mode){ renumber(); return; }
+                const [field, dir] = mode.split('_');
+                const rows = Array.from(tbody.querySelectorAll('tr')).filter(r=> r.style.display !== 'none');
+                rows.sort((a,b)=>{
+                    const va = rowKey(a, field), vb = rowKey(b, field);
+                    if (va < vb) return dir==='asc' ? -1 : 1;
+                    if (va > vb) return dir==='asc' ? 1 : -1; return 0;
+                });
+                rows.forEach(r=> tbody.appendChild(r)); renumber();
+            }
+            filterInput?.addEventListener('input', ()=>{ applyFilter(); applySort(); });
+            sortSelect?.addEventListener('change', ()=> applySort());
+
+            // Détails modal
+            document.addEventListener('click', (e)=>{
+                const btn = e.target.closest('.btn-veh-details'); if (!btn) return;
+                const tr = btn.closest('tr'); const id = tr?.getAttribute('data-veh-id'); if (!id) return;
+                // Remplir infos
+                document.getElementById('md-marque').textContent = tr.querySelector('.veh-marque')?.textContent || '';
+                document.getElementById('md-annee').textContent = tr.querySelector('.veh-annee')?.textContent || '';
+                document.getElementById('md-couleur').textContent = tr.querySelector('.veh-couleur')?.textContent || '';
+                document.getElementById('md-plaque').textContent = tr.querySelector('.veh-plaque')?.textContent || '';
+                document.getElementById('md-valide').textContent = tr.querySelector('.veh-valide')?.textContent || '';
+                document.getElementById('md-expire').textContent = tr.querySelector('.veh-expire')?.textContent || '';
+                document.getElementById('md-assu').textContent = tr.querySelector('.veh-assu')?.textContent || '';
+            });
+        })();
+        </script>
 
         <!-- Daterangepicker js -->
         <script src="assets/vendor/daterangepicker/moment.min.js"></script>

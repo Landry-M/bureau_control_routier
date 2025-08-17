@@ -3,10 +3,18 @@
 namespace Control;
 
 use Model\Db;
+use Model\ActivityLogger;
 use ORM;
 use Exception;
 
 class AgentManagementController extends Db {
+    
+    private $activityLogger;
+    
+    public function __construct()
+    {
+        $this->activityLogger = new ActivityLogger();
+    }
     
     /**
      * Afficher la page de gestion des agents
@@ -76,7 +84,8 @@ class AgentManagementController extends Db {
                     'telephone' => $agent->telephone,
                     'role' => $agent->role,
                     'status' => $agent->status,
-                    'created_at' => $agent->created_at
+                    'created_at' => $agent->created_at,
+                    'login_schedule' => $agent->login_schedule
                 ]
             ]);
             
@@ -176,9 +185,58 @@ class AgentManagementController extends Db {
             $agent->poste = trim($_POST['poste']) ?: null;
             $agent->role = $_POST['role'];
             $agent->status = $_POST['status'];
+
+            // Optionnel: planning de connexion (login_schedule)
+            $scheduleUpdated = false;
+            if (isset($_POST['schedule']) && is_array($_POST['schedule'])) {
+                $daysMap = [
+                    'mon' => 'Lundi',
+                    'tue' => 'Mardi',
+                    'wed' => 'Mercredi',
+                    'thu' => 'Jeudi',
+                    'fri' => 'Vendredi',
+                    'sat' => 'Samedi',
+                    'sun' => 'Dimanche',
+                ];
+                $normalized = [];
+                foreach ($daysMap as $key => $label) {
+                    $enabled = isset($_POST['schedule'][$key]['enabled']) && (string)$_POST['schedule'][$key]['enabled'] === '1';
+                    $start = $_POST['schedule'][$key]['start'] ?? '00:00';
+                    $end   = $_POST['schedule'][$key]['end'] ?? '23:59';
+                    if (!preg_match('/^\d{2}:\d{2}$/', (string)$start)) { $start = '00:00'; }
+                    if (!preg_match('/^\d{2}:\d{2}$/', (string)$end))   { $end   = '23:59'; }
+                    $normalized[$key] = [
+                        'enabled' => $enabled,
+                        'start' => $start,
+                        'end' => $end,
+                    ];
+                }
+                try {
+                    $agent->login_schedule = json_encode($normalized, JSON_UNESCAPED_UNICODE);
+                    $scheduleUpdated = true;
+                } catch (Exception $e) {
+                    error_log('[AgentManagementController] login_schedule non enregistré: ' . $e->getMessage());
+                }
+            }
+
             $agent->updated_at = date('Y-m-d H:i:s');
             
             if ($agent->save()) {
+                // Logger la modification de l'agent
+                $this->activityLogger->logUpdate(
+                    $_SESSION['username'] ?? null,
+                    'users',
+                    $agentId,
+                    null,
+                    [
+                        'username' => $agent->username,
+                        'matricule' => $agent->matricule,
+                        'role' => $agent->role,
+                        'status' => $agent->status,
+                        'login_schedule_updated' => $scheduleUpdated
+                    ]
+                );
+                
                 echo json_encode([
                     'success' => true,
                     'message' => 'Agent mis à jour avec succès'
@@ -264,6 +322,15 @@ class AgentManagementController extends Db {
             $agent->updated_at = date('Y-m-d H:i:s');
             
             if ($agent->save()) {
+                // Logger le changement de statut
+                $this->activityLogger->logUpdate(
+                    $_SESSION['username'] ?? null,
+                    'users',
+                    $agentId,
+                    null,
+                    ['action' => 'status_change', 'new_status' => $newStatus]
+                );
+                
                 $action = $newStatus === 'active' ? 'activé' : 'désactivé';
                 echo json_encode([
                     'success' => true,
@@ -329,6 +396,14 @@ class AgentManagementController extends Db {
             $agent->updated_at = date('Y-m-d H:i:s');
             
             if ($agent->save()) {
+                // Logger la suppression de l'agent
+                $this->activityLogger->logDelete(
+                    $_SESSION['username'] ?? null,
+                    'users',
+                    $agentId,
+                    ['username' => $agent->username, 'matricule' => $agent->matricule]
+                );
+                
                 echo json_encode([
                     'success' => true,
                     'message' => 'Agent supprimé avec succès'

@@ -86,6 +86,7 @@
                         <?php if(isset($_SESSION['user']) AND ($_SESSION['user']['role'] == 'admin' OR $_SESSION['user']['role'] == 'superadmin')) { ?>
                            
                             <div class="col">
+                                <a href="/rapport-activites">
                                 <div class="card widget-icon-box">
                                     <div class="card-body">
                                         <div class="d-flex justify-content-between">
@@ -103,7 +104,7 @@
                                         </div>
                                     </div> <!-- end card-body-->
                                 </div> <!-- end card-->
-
+                                </a>
                             </div> <!-- end col-->
                             <?php } ?>
 
@@ -153,6 +154,7 @@
                                 </div> <!-- end col-->
 
                             <div class="col">
+                                <a href="/rapport-accidents">   
                                 <div class="card widget-icon-box">
                                     <div class="card-body">
                                         <div class="d-flex justify-content-between">
@@ -171,6 +173,7 @@
                                         
                                     </div> <!-- end card-body-->
                                 </div> <!-- end card-->
+                                </a>
                             </div> <!-- end col-->
                             <div class="col">
                                 <div class="card widget-icon-box">

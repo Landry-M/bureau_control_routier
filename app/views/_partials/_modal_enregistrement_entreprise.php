@@ -29,7 +29,7 @@
                             <div class="col-md-6">
                                 <div class="mb-3">
                                     <label for="plaque_vehicule" class="form-label">Plaque d'immatriculation</label>
-                                    <input type="text" name="plaque_vehicule" id="plaque_vehicule" class="form-control" placeholder="Ex: AB-123-CD" style="text-transform: uppercase;">
+                                    <input type="text" name="plaque_vehicule" id="plaque_vehicule" class="form-control" placeholder="Ex: AB-123-CD">
                                 </div>
                             </div>
                         </div>
@@ -76,8 +76,8 @@
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="mb-3">
-                                    <label for="numero_siret" class="form-label">Numéro RCCM</label>
-                                    <input type="text" name="numero_siret" id="numero_siret" class="form-control" placeholder="12345678901234">
+                                    <label for="numero_siret" class="form-label">Numéro RCCM  <span class="text-danger">*</span></label></label>
+                                    <input type="text" name="numero_siret" id="numero_siret" class="form-control" placeholder="12345678901234" required>
                                 </div>
                             </div>
                             <div class="col-md-6">
@@ -106,75 +106,6 @@
                             </div>
                         </div>
 
-                        <!-- Section Contravention -->
-                        <div class="card mb-4">
-                            <div class="card-header bg-light">
-                                <h5 class="card-title mb-0"><i class="ri-file-warning-line me-2"></i>Contravention (optionnel)</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="date_infraction" class="form-label">Date d'infraction</label>
-                                            <input type="datetime-local" name="date_infraction" id="date_infraction" class="form-control" value="<?php echo date('Y-m-d\TH:i'); ?>">
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="lieu" class="form-label">Lieu</label>
-                                            <input type="text" name="lieu" id="lieu" class="form-control" placeholder="Lieu de l'infraction">
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="type_infraction" class="form-label">Type d'infraction</label>
-                                            <input type="text" name="type_infraction" id="type_infraction" class="form-control" placeholder="Type d'infraction">
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="reference_loi" class="form-label">Référence légale</label>
-                                            <input type="text" name="reference_loi" id="reference_loi" class="form-control" placeholder="Ex: Article 123 du Code de la route">
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="row">
-                                    <div class="col-md-12">
-                                        <div class="mb-3">
-                                            <label for="description" class="form-label">Description</label>
-                                            <textarea name="description" id="description" class="form-control" rows="3" placeholder="Description détaillée de l'infraction"></textarea>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="amende" class="form-label">Montant de l'amende</label>
-                                            <div class="input-group">
-                                                <input type="number" name="amende" id="amende" class="form-control" placeholder="0" min="0" step="0.01">
-                                                <span class="input-group-text">Fc</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="payed" class="form-label">Statut de paiement</label>
-                                            <select name="payed" id="payed" class="form-select">
-                                                <option value="">-- Sélectionner --</option>
-                                                <option value="Non payé">Non payé</option>
-                                                <option value="Payé">Payé</option>
-                                                <option value="En cours">En cours</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
 
                     </form>
                 </div>
@@ -224,10 +155,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
-            // Validation du numéro SIRET si renseigné
+            // Validation du numéro RCCM/SIRET si renseigné (alphanumérique)
             const siret = document.getElementById('numero_siret').value.trim();
-            if (siret !== '' && siret.length !== 14) {
-                alert('Le numéro RCCM doit contenir exactement 14 chiffres');
+            if (siret !== '' && !/^[A-Za-z0-9]+$/.test(siret)) {
+                alert('Le numéro RCCM doit contenir uniquement des lettres et des chiffres');
                 document.getElementById('numero_siret').focus();
                 return;
             }
@@ -237,26 +168,14 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Formatage automatique de la plaque d'immatriculation
-    const plaqueInput = document.getElementById('plaque_vehicule');
-    if (plaqueInput) {
-        plaqueInput.addEventListener('input', function(e) {
-            let value = e.target.value.replace(/[^A-Z0-9]/g, '');
-            if (value.length > 2 && value.length <= 5) {
-                value = value.substring(0, 2) + '-' + value.substring(2);
-            } else if (value.length > 5) {
-                value = value.substring(0, 2) + '-' + value.substring(2, 5) + '-' + value.substring(5, 7);
-            }
-            e.target.value = value;
-        });
-    }
+    // Formatage automatique de la plaque d'immatriculation désactivé
 
-    // Formatage automatique du numéro SIRET
+    // Formatage automatique du numéro RCCM/SIRET (alphanumérique, uppercase)
     const siretInput = document.getElementById('numero_siret');
     if (siretInput) {
         siretInput.addEventListener('input', function(e) {
-            // Ne garder que les chiffres
-            e.target.value = e.target.value.replace(/[^0-9]/g, '').substring(0, 14);
+            // Ne garder que lettres et chiffres, et forcer en majuscules
+            e.target.value = e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
         });
     }
 });

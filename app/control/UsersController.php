@@ -3,11 +3,19 @@
 namespace Control;
 
 use Model\Db;
+use Model\ActivityLogger;
 use ORM;
 use Exception;
 
 class UsersController extends Db
 {
+    private $activityLogger;
+
+    public function __construct()
+    {
+        $this->activityLogger = new ActivityLogger();
+    }
+
     /**
      * Connexion utilisateur
      */
@@ -26,299 +34,68 @@ class UsersController extends Db
             if($user[0]['status'] === 'inactive') {
                 $result['state'] = false;
                 $result['message'] = 'Votre compte est désactivé. Veuillez contacter l\'administrateur pour réactiver votre compte.';
+                // Logger la tentative de connexion échouée (compte inactif)
+                $this->activityLogger->logLoginFailed($username, 'Compte désactivé');
             } else {
-                $result['state'] = true;
-                $result['data'] = $user;
+                // Enforce optional login schedule if defined
+                $denyBySchedule = false;
+                $denyMessage = null;
+                try {
+                    $scheduleJson = $user[0]['login_schedule'] ?? null;
+                    $schedule = $scheduleJson ? json_decode($scheduleJson, true) : null;
+                    if (is_array($schedule)) {
+                        // Check if any day is enabled; if none, no restriction
+                        $anyEnabled = false;
+                        foreach ($schedule as $d => $cfg) {
+                            if (!empty($cfg['enabled'])) { $anyEnabled = true; break; }
+                        }
+                        if ($anyEnabled) {
+                            $map = [
+                                'Mon' => 'mon','Tue' => 'tue','Wed' => 'wed','Thu' => 'thu','Fri' => 'fri','Sat' => 'sat','Sun' => 'sun'
+                            ];
+                            $phpDay = date('D');
+                            $dayKey = $map[$phpDay] ?? null;
+                            $now = date('H:i');
+                            $cfg = $dayKey && isset($schedule[$dayKey]) ? $schedule[$dayKey] : null;
+                            if (!$cfg || empty($cfg['enabled'])) {
+                                $denyBySchedule = true;
+                                $denyMessage = "Connexion non autorisée aujourd'hui.";
+                            } else {
+                                $start = isset($cfg['start']) && preg_match('/^\d{2}:\d{2}$/', $cfg['start']) ? $cfg['start'] : '00:00';
+                                $end   = isset($cfg['end']) && preg_match('/^\d{2}:\d{2}$/', $cfg['end']) ? $cfg['end'] : '23:59';
+                                if (!($now >= $start && $now <= $end)) {
+                                    $denyBySchedule = true;
+                                    $denyMessage = 'Connexion en dehors des heures autorisées (' . $start . ' - ' . $end . ').';
+                                }
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    // En cas d'erreur de parsing, ne pas bloquer la connexion
+                }
+
+                if ($denyBySchedule) {
+                    $result['state'] = false;
+                    $result['message'] = $denyMessage ?? 'Connexion non autorisée par la politique d\'horaires.';
+                    $this->activityLogger->logLoginFailed($username, 'Restriction horaires');
+                } else {
+                    $result['state'] = true;
+                    $result['data'] = $user;
+                    // Logger la connexion réussie
+                    $this->activityLogger->logLogin($username);
+                }
             }
         }else{
             $result['state'] = false;
             $result['message'] = 'Coordonnées de connexion incorrectes';
+            // Logger la tentative de connexion échouée
+            $this->activityLogger->logLoginFailed($username, 'Identifiants incorrects');
         }
         //return an array
         $result = (array)$result;
         return $result;
-    }
-
-    /**
-     * Créer un nouveau profil utilisateur
-     */
-    public function createProfile($data)
-    {
-        try {
-            $this->getConnexion();
-            
-            // Vérifier si l'email existe déjà
-            $existingUser = ORM::for_table('users')
-                ->where('email', $data['email'])
-                ->find_one();
-                
-            if ($existingUser) {
-                return json_encode([
-                    'state' => false,
-                    'message' => 'Un utilisateur avec cet email existe déjà'
-                ]);
-            }
-            
-            // Créer le nouvel utilisateur
-            $user = ORM::for_table('users')->create();
-            $user->nom = $data['nom'] ?? '';
-            $user->prenom = $data['prenom'] ?? '';
-            $user->email = $data['email'];
-            $user->password = md5($data['password']);
-            $user->telephone = $data['telephone'] ?? '';
-            $user->adresse = $data['adresse'] ?? '';
-            $user->date_creation = date('Y-m-d H:i:s');
-            $user->statut = $data['statut'] ?? 'actif';
-            
-            if ($user->save()) {
-                return json_encode([
-                    'state' => true,
-                    'message' => 'Profil utilisateur créé avec succès',
-                    'data' => [
-                        'id' => $user->id,
-                        'email' => $user->email,
-                        'nom' => $user->nom,
-                        'prenom' => $user->prenom
-                    ]
-                ]);
-            } else {
-                return json_encode([
-                    'state' => false,
-                    'message' => 'Erreur lors de la création du profil'
-                ]);
-            }
-            
-        } catch (Exception $e) {
-            return json_encode([
-                'state' => false,
-                'message' => 'Erreur: ' . $e->getMessage()
-            ]);
-        }
-    }
-
-    /**
-     * Récupérer le profil d'un utilisateur
-     */
-    public function getProfile($userId)
-    {
-        try {
-            $this->getConnexion();
-            
-            $user = ORM::for_table('users')
-                ->where('id', $userId)
-                ->find_one();
-                
-            if ($user) {
-                // Ne pas retourner le mot de passe
-                $userData = [
-                    'id' => $user->id,
-                    'nom' => $user->nom,
-                    'prenom' => $user->prenom,
-                    'email' => $user->email,
-                    'telephone' => $user->telephone,
-                    'adresse' => $user->adresse,
-                    'date_creation' => $user->date_creation,
-                    'statut' => $user->statut
-                ];
-                
-                return json_encode([
-                    'state' => true,
-                    'data' => $userData
-                ]);
-            } else {
-                return json_encode([
-                    'state' => false,
-                    'message' => 'Utilisateur non trouvé'
-                ]);
-            }
-            
-        } catch (Exception $e) {
-            return json_encode([
-                'state' => false,
-                'message' => 'Erreur: ' . $e->getMessage()
-            ]);
-        }
-    }
-
-    /**
-     * Mettre à jour le profil utilisateur
-     */
-    public function updateProfile($userId, $data)
-    {
-        try {
-            $this->getConnexion();
-            
-            $user = ORM::for_table('users')
-                ->where('id', $userId)
-                ->find_one();
-                
-            if (!$user) {
-                return json_encode([
-                    'state' => false,
-                    'message' => 'Utilisateur non trouvé'
-                ]);
-            }
-            
-            // Vérifier si l'email est déjà utilisé par un autre utilisateur
-            if (isset($data['email']) && $data['email'] !== $user->email) {
-                $existingUser = ORM::for_table('users')
-                    ->where('email', $data['email'])
-                    ->where_not_equal('id', $userId)
-                    ->find_one();
-                    
-                if ($existingUser) {
-                    return json_encode([
-                        'state' => false,
-                        'message' => 'Cet email est déjà utilisé par un autre utilisateur'
-                    ]);
-                }
-            }
-            
-            // Mettre à jour les champs
-            if (isset($data['nom'])) $user->nom = $data['nom'];
-            if (isset($data['prenom'])) $user->prenom = $data['prenom'];
-            if (isset($data['email'])) $user->email = $data['email'];
-            if (isset($data['telephone'])) $user->telephone = $data['telephone'];
-            if (isset($data['adresse'])) $user->adresse = $data['adresse'];
-            if (isset($data['statut'])) $user->statut = $data['statut'];
-            
-            // Mettre à jour le mot de passe si fourni
-            if (isset($data['password']) && !empty($data['password'])) {
-                $user->password = md5($data['password']);
-            }
-            
-            $user->date_modification = date('Y-m-d H:i:s');
-            
-            if ($user->save()) {
-                return json_encode([
-                    'state' => true,
-                    'message' => 'Profil mis à jour avec succès',
-                    'data' => [
-                        'id' => $user->id,
-                        'nom' => $user->nom,
-                        'prenom' => $user->prenom,
-                        'email' => $user->email,
-                        'telephone' => $user->telephone,
-                        'adresse' => $user->adresse
-                    ]
-                ]);
-            } else {
-                return json_encode([
-                    'state' => false,
-                    'message' => 'Erreur lors de la mise à jour du profil'
-                ]);
-            }
-            
-        } catch (Exception $e) {
-            return json_encode([
-                'state' => false,
-                'message' => 'Erreur: ' . $e->getMessage()
-            ]);
-        }
-    }
-
-    /**
-     * Supprimer le profil utilisateur
-     */
-    public function deleteProfile($userId)
-    {
-        try {
-            $this->getConnexion();
-            
-            $user = ORM::for_table('users')
-                ->where('id', $userId)
-                ->find_one();
-                
-            if (!$user) {
-                return json_encode([
-                    'state' => false,
-                    'message' => 'Utilisateur non trouvé'
-                ]);
-            }
-            
-            if ($user->delete()) {
-                return json_encode([
-                    'state' => true,
-                    'message' => 'Profil supprimé avec succès'
-                ]);
-            } else {
-                return json_encode([
-                    'state' => false,
-                    'message' => 'Erreur lors de la suppression du profil'
-                ]);
-            }
-            
-        } catch (Exception $e) {
-            return json_encode([
-                'state' => false,
-                'message' => 'Erreur: ' . $e->getMessage()
-            ]);
-        }
-    }
-
-    /**
-     * Lister tous les utilisateurs (avec pagination optionnelle)
-     */
-    public function getAllProfiles($limit = null, $offset = 0)
-    {
-        try {
-            $this->getConnexion();
-            
-            $query = ORM::for_table('users')
-                ->select_many('id', 'nom', 'prenom', 'email', 'telephone', 'date_creation', 'statut');
-            
-            if ($limit) {
-                $query->limit($limit)->offset($offset);
-            }
-            
-            $users = $query->find_array();
-            
-            return json_encode([
-                'state' => true,
-                'data' => $users,
-                'count' => count($users)
-            ]);
-            
-        } catch (Exception $e) {
-            return json_encode([
-                'state' => false,
-                'message' => 'Erreur: ' . $e->getMessage()
-            ]);
-        }
-    }
-
-    /**
-     * Rechercher des utilisateurs par nom, prénom ou email
-     */
-    public function searchProfiles($searchTerm)
-    {
-        try {
-            $this->getConnexion();
-            
-            $users = ORM::for_table('users')
-                ->select_many('id', 'nom', 'prenom', 'email', 'telephone', 'date_creation', 'statut')
-                ->where_like('nom', "%{$searchTerm}%")
-                ->where_like('prenom', "%{$searchTerm}%")
-                ->where_like('email', "%{$searchTerm}%")
-                ->find_array();
-            
-            return json_encode([
-                'state' => true,
-                'data' => $users,
-                'count' => count($users)
-            ]);
-            
-        } catch (Exception $e) {
-            return json_encode([
-                'state' => false,
-                'message' => 'Erreur: ' . $e->getMessage()
-            ]);
-        }
-    }
-
-    /**
-     * Changer le mot de passe d'un utilisateur
-     */
+    } 
+ 
     public function changePassword($userId, $oldPassword, $newPassword)
     {
         try {
@@ -348,6 +125,15 @@ class UsersController extends Db
             $user->updated_at = date('Y-m-d H:i:s');
             
             if ($user->save()) {
+                // Logger le changement de mot de passe
+                $this->activityLogger->logUpdate(
+                    $_SESSION['username'] ?? null, 
+                    'users', 
+                    $userId, 
+                    null, 
+                    ['action' => 'password_change']
+                );
+                
                 $result['state'] = true;
                 $result['message'] = 'Mot de passe changé avec succès';
                 $result['data'] = $user;
@@ -366,46 +152,5 @@ class UsersController extends Db
         }
     }
 
-    /**
-     * Activer/Désactiver un utilisateur
-     */
-    public function toggleUserStatus($userId, $status)
-    {
-        try {
-            $this->getConnexion();
-            
-            $user = ORM::for_table('users')
-                ->where('id', $userId)
-                ->find_one();
-                
-            if (!$user) {
-                return json_encode([
-                    'state' => false,
-                    'message' => 'Utilisateur non trouvé'
-                ]);
-            }
-            
-            $user->statut = $status;
-            $user->date_modification = date('Y-m-d H:i:s');
-            
-            if ($user->save()) {
-                return json_encode([
-                    'state' => true,
-                    'message' => "Statut utilisateur mis à jour: {$status}",
-                    'data' => ['statut' => $status]
-                ]);
-            } else {
-                return json_encode([
-                    'state' => false,
-                    'message' => 'Erreur lors de la mise à jour du statut'
-                ]);
-            }
-            
-        } catch (Exception $e) {
-            return json_encode([
-                'state' => false,
-                'message' => 'Erreur: ' . $e->getMessage()
-            ]);
-        }
-    }
+
 }

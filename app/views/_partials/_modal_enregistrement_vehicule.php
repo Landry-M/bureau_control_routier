@@ -49,6 +49,21 @@
                                     </div>
                                 </div>
 
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="modele" class="form-label">Modèle</label>
+                                            <input type="text" name="modele" id="modele" class="form-control" placeholder="Ex: Corolla, 308, C-Class">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="numero_chassis" class="form-label">Numéro de châssis</label>
+                                            <input type="text" name="numero_chassis" id="numero_chassis" class="form-control" placeholder="Ex: VF3XXXXXXXXXXXXXX">
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- Informations plaque d'immatriculation -->
                                 <div class="row">
                                     <div class="col-md-4">
@@ -105,90 +120,6 @@
                                         <div class="mb-3">
                                             <label for="date_expire_assurance" class="form-label">Assurance expire le <span class="text-danger">*</span></label>
                                             <input type="date" name="date_expire_assurance" id="date_expire_assurance" class="form-control" value="<?php echo date('Y-m-d'); ?>" required>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Section Contravention -->
-                        <div class="card mb-4">
-                            <div class="card-header bg-light">
-                                <h5 class="card-title mb-0"><i class="ri-file-warning-line me-2"></i>Contravention (optionnel)</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="row">
-                                    <!-- <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="type_dossier" class="form-label">Type de dossier</label>
-                                            <select name="type_dossier" id="type_dossier" class="form-select">
-                                                <option value="">-- Sélectionner --</option>
-                                                <option value="simple">Simple</option>
-                                                <option value="grave">Grave</option>
-                                                <option value="criminel">Criminel</option>
-                                                <option value="civil">Civil</option>
-                                            </select>
-                                        </div>
-                                    </div> -->
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="date_infraction" class="form-label">Date d'infraction</label>
-                                            <input type="datetime-local" name="date_infraction" id="date_infraction" class="form-control" value="<?php echo date('Y-m-d\TH:i'); ?>">
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="lieu" class="form-label">Lieu</label>
-                                            <input type="text" name="lieu" id="lieu" class="form-control" placeholder="Lieu de l'infraction">
-                                        </div>
-                                    </div>
-
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label for="type_infraction" class="form-label">Type d'infraction</label>
-                                            <input type="text" name="type_infraction" id="type_infraction" class="form-control" placeholder="Typ d'infraction">
-                                        </div>
-                                    </div>
-
-                                </div>
-
-                                <div class="row">
-                                    <div class="col-md-12">
-                                        <div class="mb-3">
-                                            <label for="description" class="form-label">Description</label>
-                                            <textarea name="description" id="description" class="form-control" rows="3" placeholder="Description détaillée de l'infraction"></textarea>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="row">
-                                    <div class="col-md-4">
-                                        <div class="mb-3">
-                                            <label for="reference_loi" class="form-label">Référence légale</label>
-                                            <input type="text" name="reference_loi" id="reference_loi" class="form-control" placeholder="Ex: Article 123 du Code de la route">
-                                        </div>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <div class="mb-3">
-                                            <label for="amende" class="form-label">Montant de l'amende</label>
-                                            <div class="input-group">
-                                                <input type="number" name="amende" id="amende" class="form-control" placeholder="0" min="0" step="0.01">
-                                                <span class="input-group-text">Fc</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <div class="mb-3">
-                                            <label for="payed" class="form-label">Statut de paiement</label>
-                                            <select name="payed" id="payed" class="form-select">
-                                                <option value="">-- Sélectionner --</option>
-                                                <option value="Non payé">Non payé</option>
-                                                <option value="Payé">Payé</option>
-                                                <option value="En cours">En cours</option>
-                                            </select>
                                         </div>
                                     </div>
                                 </div>
@@ -286,23 +217,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Formatage automatique de la plaque d'immatriculation
-    const plaqueInput = document.getElementById('plaque');
-    if (plaqueInput) {
-        plaqueInput.addEventListener('input', function(e) {
-            let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-            if (value.length > 2) {
-                value = value.substring(0, 2) + '-' + value.substring(2);
-            }
-            if (value.length > 6) {
-                value = value.substring(0, 6) + '-' + value.substring(6);
-            }
-            if (value.length > 9) {
-                value = value.substring(0, 9);
-            }
-            e.target.value = value;
-        });
-    }
 
     // Validation des dates d'expiration
     const plaqueValideLe = document.getElementById('plaque_valide_le');
@@ -366,52 +280,8 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Vérifier la validité du formulaire
             if (vehiculeForm.checkValidity()) {
-                // Afficher un indicateur de chargement
-                const originalBtnText = enregistrerBtn.innerHTML;
-                enregistrerBtn.innerHTML = '<i class="ri-loader-2-line me-1"></i> Enregistrement...';
-                enregistrerBtn.disabled = true;
-
-                // Soumettre le formulaire via AJAX
-                const formData = new FormData(vehiculeForm);
-                
-                fetch('/create-vehicule-plaque', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.state) {
-                        // Succès
-                        if (typeof Swal !== 'undefined') {
-                            Swal.fire({
-                                icon: 'success',
-                                title: 'Succès',
-                                text: data.message,
-                                confirmButtonText: 'OK'
-                            }).then((result) => {
-                                if (result.isConfirmed) {
-                                    // Recharger la page
-                                    location.reload();
-                                }
-                            });
-                        } else {
-                            alert(data.message);
-                            location.reload();
-                        }
-                    } else {
-                        // Erreur
-                        showError(data.message || 'Une erreur est survenue lors de l\'enregistrement');
-                    }
-                })
-                .catch(error => {
-                    console.error('Erreur:', error);
-                    showError('Une erreur est survenue lors de l\'enregistrement du véhicule');
-                })
-                .finally(() => {
-                    // Réactiver le bouton
-                    enregistrerBtn.disabled = false;
-                    enregistrerBtn.innerHTML = originalBtnText;
-                });
+                // Envoi classique (POST vers la route déjà créée)
+                vehiculeForm.submit();
             } else {
                 // Afficher les erreurs de validation
                 vehiculeForm.reportValidity();

@@ -1,3 +1,40 @@
+<?php
+// Précharger le planning de connexion de l'utilisateur connecté
+// pour préremplir l'UI du profil
+use ORM;
+use Exception;
+$currentSchedule = [];
+try {
+    if (isset($_SESSION['user']['id'])) {
+        $userRow = ORM::for_table('users')
+            ->select('login_schedule')
+            ->where('id', $_SESSION['user']['id'])
+            ->find_one();
+        if ($userRow) {
+            $json = $userRow->login_schedule ?? null;
+            if (is_string($json) && $json !== '') {
+                $decoded = json_decode($json, true);
+                if (is_array($decoded)) { $currentSchedule = $decoded; }
+            } elseif (is_array($json)) {
+                // Au cas où l'ORM retournerait déjà un tableau
+                $currentSchedule = $json;
+            }
+        }
+    }
+} catch (Exception $e) {
+    // En cas d'erreur, laisser $currentSchedule vide
+}
+// Jours de la semaine (clés courtes)
+$scheduleDays = [
+    'mon' => 'Lundi',
+    'tue' => 'Mardi',
+    'wed' => 'Mercredi',
+    'thu' => 'Jeudi',
+    'fri' => 'Vendredi',
+    'sat' => 'Samedi',
+    'sun' => 'Dimanche',
+];
+?>
 <!DOCTYPE html>
 <html lang="en" data-layout="topnav" data-menu-color="brand">
 
@@ -190,6 +227,52 @@
                                                 <div class="mb-3">
                                                     <label for="confirm_password" class="form-label">Confirmer le mot de passe</label>
                                                     <input type="password" class="form-control" id="confirm_password" name="confirm_password" disabled>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <h5 class="mb-3 text-uppercase bg-light p-2"><i class="ri-time-line me-1"></i> Planning de connexion (optionnel)</h5>
+                                        <div class="row">
+                                            <div class="col-12">
+                                                <div class="mb-2">
+                                                    <label class="form-label fw-bold">Jours et heures autorisés pour la connexion</label>
+                                                    <small class="text-muted d-block">Laissez tout décoché pour ne pas restreindre les horaires de connexion.</small>
+                                                </div>
+                                                <div class="table-responsive border rounded p-2">
+                                                    <table class="table table-sm align-middle mb-0">
+                                                        <thead>
+                                                            <tr>
+                                                                <th style="width: 140px;">Jour</th>
+                                                                <th style="width: 110px;">Autoriser</th>
+                                                                <th style="width: 180px;">Heure début</th>
+                                                                <th style="width: 180px;">Heure fin</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <?php foreach ($scheduleDays as $dkey => $dlabel):
+                                                                $cfg = $currentSchedule[$dkey] ?? [];
+                                                                $enabled = !empty($cfg['enabled']);
+                                                                $start = isset($cfg['start']) && preg_match('/^\d{2}:\d{2}$/', $cfg['start']) ? $cfg['start'] : '08:00';
+                                                                $end   = isset($cfg['end'])   && preg_match('/^\d{2}:\d{2}$/', $cfg['end'])   ? $cfg['end']   : '17:00';
+                                                            ?>
+                                                            <tr>
+                                                                <td class="fw-medium"><?php echo $dlabel; ?></td>
+                                                                <td>
+                                                                    <div class="form-check form-switch">
+                                                                        <input class="form-check-input schedule-field" type="checkbox" id="sched_<?php echo $dkey; ?>" name="schedule[<?php echo $dkey; ?>][enabled]" value="1" <?php echo $enabled ? 'checked' : ''; ?> disabled>
+                                                                        <label class="form-check-label" for="sched_<?php echo $dkey; ?>">Autoriser</label>
+                                                                    </div>
+                                                                </td>
+                                                                <td>
+                                                                    <input type="time" class="form-control form-control-sm schedule-field" name="schedule[<?php echo $dkey; ?>][start]" value="<?php echo htmlspecialchars($start); ?>" disabled>
+                                                                </td>
+                                                                <td>
+                                                                    <input type="time" class="form-control form-control-sm schedule-field" name="schedule[<?php echo $dkey; ?>][end]" value="<?php echo htmlspecialchars($end); ?>" disabled>
+                                                                </td>
+                                                            </tr>
+                                                            <?php endforeach; ?>
+                                                        </tbody>
+                                                    </table>
                                                 </div>
                                             </div>
                                         </div>
@@ -506,6 +589,19 @@
                         } else {
                             element.classList.remove('border-primary');
                         }
+                    }
+                });
+                // Activer/désactiver les champs du planning
+                document.querySelectorAll('.schedule-field').forEach(el => {
+                    if (el.type === 'checkbox') {
+                        el.disabled = !isEditMode;
+                    } else {
+                        el.disabled = !isEditMode;
+                    }
+                    if (isEditMode) {
+                        el.classList.add('border-primary');
+                    } else {
+                        el.classList.remove('border-primary');
                     }
                 });
                 
