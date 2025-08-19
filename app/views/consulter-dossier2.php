@@ -1053,8 +1053,9 @@
 
                                                     // Initial
                                                     applyFilter();
-                                                })();
-                                                </script>
+                                                    markArrestedRows();
+                                                    })();
+                                                    </script>
 
                                             </div>
                                             <!-- end timeline content-->
@@ -1109,7 +1110,7 @@
                                                                             data-observations="<?php echo htmlspecialchars($p['observations'] ?? '', ENT_QUOTES); ?>"
                                                                         >
                                                                             <td><?php echo $idxp++; ?></td>
-                                                                            <td class="p-nom"><?php echo htmlspecialchars($p['nom'] ?? ''); ?></td>
+                                                                            <td class="p-nom"><?php echo htmlspecialchars($p['nom'] ?? ''); ?> <span class="badge bg-danger ms-1 d-none arrest-badge">Arrêté</span></td>
                                                                             <td class="p-num"><?php echo htmlspecialchars($p['numero_national'] ?? ''); ?></td>
                                                                             <td class="p-dn"><?php echo htmlspecialchars($p['date_naissance'] ?? ''); ?></td>
                                                                             <td class="p-adr"><?php echo htmlspecialchars($p['adresse'] ?? ''); ?></td>
@@ -1152,7 +1153,7 @@
                                                                             <div class="row g-3 align-items-center">
                                                                                 <div class="col-md-6">
                                                                                     <div class="text-muted small">Nom</div>
-                                                                                    <div class="fw-semibold fs-5" id="pt_nom"></div>
+                                                                                    <div class="fw-semibold fs-5"><span id="pt_nom"></span><span class="badge bg-danger ms-2 d-none" id="pt_arrest_badge">Arrêté</span></div>
                                                                                 </div>
                                                                                 <div class="col-md-6">
                                                                                     <div class="text-muted small">N° National</div>
@@ -1219,10 +1220,24 @@
                                                                                         <button type="button" class="btn btn-sm btn-outline-dark" id="pt_btn_close_avis" data-avis-id="">Clore l'avis</button>
                                                                                     </div>
                                                                                 </div>
+                                                                                <div id="pt_permis_banner" class="alert alert-success d-none d-flex align-items-center justify-content-between" role="alert">
+                                                                                    <div>
+                                                                                        <i class="ri-id-card-line me-2"></i>
+                                                                                        <strong>Permis temporaire actif</strong>
+                                                                                        <span class="ms-2" id="pt_permis_text"></span>
+                                                                                        <span class="badge bg-danger ms-2 d-none" id="pt_permis_badge">Expiré</span>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <button type="button" class="btn btn-sm btn-outline-dark" id="pt_btn_close_permis" data-permis-id="">Clore le permis</button>
+                                                                                    </div>
+                                                                                </div>
                                                                             </div>
-                                                                            <div class="col-12 d-flex justify-content-end">
+                                                                            <div class="col-12 d-flex justify-content-end" style="position:relative; z-index: 2000;">
                                                                                 <button type="button" class="btn btn-sm btn-outline-danger" id="pt_btn_launch_avis">
                                                                                     <i class="ri-megaphone-line me-1"></i> Lancer un avis de recherche
+                                                                                </button>
+                                                                                <button type="button" class="btn btn-sm btn-outline-success ms-2" id="pt_btn_launch_permis" data-action="launch-permis" style="pointer-events:auto; position: relative; z-index: 2001;" onclick="return window.__launchPermisFromBtn ? window.__launchPermisFromBtn(event, this) : false;">
+                                                                                    <i class="ri-id-card-line me-1"></i> Émettre un permis temporaire
                                                                                 </button>
                                                                             </div>
                                                                             <div class="col-12"><hr class="my-3"></div>
@@ -1303,6 +1318,7 @@
                                                             ].join(' ').toLowerCase();
                                                             tr.style.display = q && !text.includes(q) ? 'none' : '';
                                                         });
+                                                        markArrestedRows();
                                                     }
                                                     function renumber(){
                                                         if (!tbody) return; let i=1;
@@ -1321,11 +1337,38 @@
                                                             if (va > vb) return dir==='asc' ? 1 : -1; return 0;
                                                         });
                                                         rows.forEach(r=> tbody.appendChild(r)); renumber();
+                                                        markArrestedRows();
+                                                    }
+                                                    // Badge "Arrêté" sur chaque ligne si le particulier a des arrestations
+                                                    const __arrestCache = new Map();
+                                                    function markArrestedRows(){
+                                                        if (!tbody) return;
+                                                        const trs = Array.from(tbody.querySelectorAll('tr')).filter(tr=> tr.style.display !== 'none');
+                                                        trs.forEach(tr=>{
+                                                            const pid = tr.getAttribute('data-id');
+                                                            const badge = tr.querySelector('.arrest-badge');
+                                                            if (!pid || !badge) return;
+                                                            if (__arrestCache.has(pid)){
+                                                                if (__arrestCache.get(pid)) badge.classList.remove('d-none');
+                                                                return;
+                                                            }
+                                                            fetch(`/particulier/${encodeURIComponent(pid)}/arrestations`)
+                                                                .then(r=>r.json())
+                                                                .then(j=>{
+                                                                    const has = j && j.ok && Array.isArray(j.data) && j.data.length > 0;
+                                                                    __arrestCache.set(pid, has);
+                                                                    if (has) badge.classList.remove('d-none');
+                                                                })
+                                                                .catch(()=>{ __arrestCache.set(pid, false); });
+                                                        });
                                                     }
                                                     // Détails modal
                                                     function fillParticulierModalFromRow(tr){
                                                         const get = (k)=> tr.getAttribute('data-'+k) || '';
                                                         const pid = tr.getAttribute('data-id') || '';
+                                                        try { window.__currentParticulierId = pid; } catch {}
+                                                        const detailsModalEl = document.getElementById('particulierDetailsModal');
+                                                        if (detailsModalEl) { detailsModalEl.setAttribute('data-id', pid); }
                                                         const pnumero = get('numero_national');
                                                         document.getElementById('pt_nom').textContent = get('nom');
                                                         document.getElementById('pt_numero_national').textContent = get('numero_national');
@@ -1349,9 +1392,32 @@
                                                         const avisBanner = document.getElementById('pt_avis_banner');
                                                         const avisText = document.getElementById('pt_avis_text');
                                                         const btnCloseAvis = document.getElementById('pt_btn_close_avis');
+                                                        const permisBanner = document.getElementById('pt_permis_banner');
+                                                        const permisText = document.getElementById('pt_permis_text');
+                                                        const permisBadge = document.getElementById('pt_permis_badge');
+                                                        const btnClosePermis = document.getElementById('pt_btn_close_permis');
                                                         if (avisBanner) avisBanner.classList.add('d-none');
                                                         if (avisText) avisText.textContent = '';
                                                         if (btnCloseAvis) btnCloseAvis.setAttribute('data-avis-id','');
+                                                        if (permisBanner) { permisBanner.classList.add('d-none'); permisBanner.classList.remove('alert-danger'); permisBanner.classList.add('alert-success'); }
+                                                        // Badge Arrestation: masqué par défaut puis affiché si des arrestations existent
+                                                        const arrestBadge = document.getElementById('pt_arrest_badge');
+                                                        if (arrestBadge) arrestBadge.classList.add('d-none');
+                                                        // Charger arrestations
+                                                        if (pid) {
+                                                            fetch(`/particulier/${encodeURIComponent(pid)}/arrestations`)
+                                                              .then(r=>r.json())
+                                                              .then(j=>{
+                                                                try {
+                                                                  const has = j && j.ok && Array.isArray(j.data) && j.data.length > 0;
+                                                                  if (has && arrestBadge) arrestBadge.classList.remove('d-none');
+                                                                } catch {}
+                                                              })
+                                                              .catch(()=>{});
+                                                        }
+                                                        if (permisText) permisText.textContent = '';
+                                                        if (permisBadge) permisBadge.classList.add('d-none');
+                                                        if (btnClosePermis) btnClosePermis.setAttribute('data-permis-id','');
                                                         if (pid) {
                                                             const url = `/particulier/${pid}/contraventions` + (pnumero ? `?numero=${encodeURIComponent(pnumero)}` : '');
                                                             fetch(url).then(r=>r.json()).then(json=>{
@@ -1429,6 +1495,42 @@
                                                                     if (avisText) avisText.textContent = `${motif} — niveau: ${niveau}`;
                                                                     if (btnCloseAvis) btnCloseAvis.setAttribute('data-avis-id', String(active.id||''));
                                                                     avisBanner.classList.remove('d-none');
+                                                                }
+                                                            }).catch(()=>{});
+
+                                                            // Charger permis temporaires pour ce particulier
+                                                            fetch(`/particulier/${pid}/permis-temporaire`).then(r=>r.json()).then(json=>{
+                                                                if (!json || !json.ok) return;
+                                                                const list = Array.isArray(json.data) ? json.data : [];
+                                                                const active = list.find(p=> (p.statut||'') === 'actif');
+                                                                if (active && permisBanner) {
+                                                                    const numero = active.numero || '';
+                                                                    const dd = active.date_debut || active.dateDebut || '';
+                                                                    const df = active.date_fin || active.dateFin || '';
+                                                                    const ddDisp = window.formatDMY ? (window.formatDMY(dd) || dd) : dd;
+                                                                    const dfDisp = window.formatDMY ? (window.formatDMY(df) || df) : df;
+                                                                    if (permisText) permisText.textContent = `${numero ? 'N° ' + numero + ' — ' : ''}du ${ddDisp} au ${dfDisp}`;
+                                                                    if (btnClosePermis) btnClosePermis.setAttribute('data-permis-id', String(active.id||''));
+                                                                    // Determine expiration (compare date_fin to today date-only)
+                                                                    let isExpired = false;
+                                                                    try {
+                                                                        if (df) {
+                                                                            const t = new Date(); const today = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+                                                                            const end = new Date(df);
+                                                                            const endDateOnly = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+                                                                            isExpired = endDateOnly < today;
+                                                                        }
+                                                                    } catch {}
+                                                                    if (isExpired) {
+                                                                        if (permisBadge) permisBadge.classList.remove('d-none');
+                                                                        permisBanner.classList.remove('alert-success');
+                                                                        permisBanner.classList.add('alert-danger');
+                                                                    } else {
+                                                                        if (permisBadge) permisBadge.classList.add('d-none');
+                                                                        permisBanner.classList.remove('alert-danger');
+                                                                        permisBanner.classList.add('alert-success');
+                                                                    }
+                                                                    permisBanner.classList.remove('d-none');
                                                                 }
                                                             }).catch(()=>{});
                                                         } else {
@@ -1515,6 +1617,146 @@
                                                             showSuccess('Avis de recherche clôturé avec succès');
                                                         } catch(err){ alert(err.message||'Erreur réseau'); }
                                                     });
+                                                    // Helper pour récupérer l'ID courant du particulier
+                                                    window.__getCurrentParticulierId = function(){
+                                                        const fromGlobal = window.__currentParticulierId || '';
+                                                        const fromDetails = document.getElementById('particulierDetailsModal')?.getAttribute('data-id') || '';
+                                                        const fromActions = document.getElementById('particulierActionsModal')?.getAttribute('data-dossier-id') || '';
+                                                        const fromCache = (window.__lastParticulierCtx && window.__lastParticulierCtx.id) ? window.__lastParticulierCtx.id : '';
+                                                        let fromStorage = '';
+                                                        try { fromStorage = JSON.parse(localStorage.getItem('recent_particulier_ctx')||'{}')?.id || ''; } catch {}
+                                                        return fromGlobal || fromDetails || fromActions || fromCache || fromStorage || '';
+                                                    };
+                                                    // Helper global pour ouvrir le modal Permis
+                                                    window.__openPermisModal = function(pid){
+                                                        if (!pid) { alert('Veuillez d\'abord ouvrir les détails du particulier.'); return; }
+                                                        let modalEl = document.getElementById('launchPermisModal');
+                                                        if (!modalEl) {
+                                                            modalEl = document.createElement('div');
+                                                            modalEl.id = 'launchPermisModal';
+                                                            modalEl.className = 'modal fade';
+                                                            modalEl.tabIndex = -1;
+                                                            modalEl.setAttribute('aria-hidden','true');
+                                                            modalEl.innerHTML = `
+                                                              <div class="modal-dialog">
+                                                                <div class="modal-content">
+                                                                  <div class="modal-header">
+                                                                    <h5 class="modal-title"><i class=\"ri-id-card-line me-2\"></i>Émettre un permis temporaire</h5>
+                                                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                                  </div>
+                                                                  <form id="launchPermisForm">
+                                                                  <div class="modal-body">
+                                                                    <div class="mb-3">
+                                                                      <label class="form-label">Motif</label>
+                                                                      <textarea name="motif" class="form-control" rows="3" placeholder="Expliquer le motif" required></textarea>
+                                                                    </div>
+                                                                    <div class="row g-3">
+                                                                      <div class="col-md-6">
+                                                                        <label class="form-label">Date de début</label>
+                                                                        <input type="date" name="date_debut" class="form-control" required>
+                                                                      </div>
+                                                                      <div class="col-md-6">
+                                                                        <label class="form-label">Durée</label>
+                                                                        <select name="duree" class="form-select">
+                                                                          <option value="7">7 jours</option>
+                                                                          <option value="14" selected>14 jours</option>
+                                                                          <option value="30">30 jours</option>
+                                                                        </select>
+                                                                      </div>
+                                                                    </div>
+                                                                    <div class="alert mt-3 d-none" id="pt_feedback_permis"></div>
+                                                                  </div>
+                                                                  <div class="modal-footer">
+                                                                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Annuler</button>
+                                                                    <button type="submit" class="btn btn-success" id="pt_submit_permis">Émettre</button>
+                                                                  </div>
+                                                                  </form>
+                                                                </div>
+                                                              </div>`;
+                                                            document.body.appendChild(modalEl);
+                                                        }
+                                                        modalEl.setAttribute('data-pid', pid);
+                                                        // Valeurs par défaut
+                                                        const today = new Date();
+                                                        const yyyy = today.getFullYear(); const mm = String(today.getMonth()+1).padStart(2,'0'); const dd = String(today.getDate()).padStart(2,'0');
+                                                        const dateStr = `${yyyy}-${mm}-${dd}`;
+                                                        const f = modalEl.querySelector('#launchPermisForm');
+                                                        if (f) {
+                                                          const d1 = f.querySelector('[name="date_debut"]'); if (d1) d1.value = dateStr;
+                                                          const dur = f.querySelector('[name="duree"]'); if (dur) dur.value = '14';
+                                                          const motif = f.querySelector('[name="motif"]'); if (motif) motif.value = '';
+                                                          const fb = modalEl.querySelector('#pt_feedback_permis'); if (fb) { fb.className = 'alert d-none'; fb.textContent = ''; }
+                                                        }
+                                                        if (modalEl.parentElement && modalEl.parentElement !== document.body) document.body.appendChild(modalEl);
+                                                        try { bootstrap.Modal.getOrCreateInstance(modalEl).show(); } catch {}
+                                                    };
+                                                    // Fallback onclick depuis le bouton
+                                                    window.__launchPermisFromBtn = function(ev, el){
+                                                        try { ev && ev.preventDefault(); ev && ev.stopPropagation(); } catch {}
+                                                        const pid = (el && el.getAttribute && el.getAttribute('data-dossier-id')) || window.__getCurrentParticulierId();
+                                                        window.__openPermisModal(pid);
+                                                        return false;
+                                                    };
+                                                    // Ouvrir le modal de création de permis temporaire (delegation)
+                                                    document.addEventListener('click', (e)=>{
+                                                        const btn = e.target.closest('#pt_btn_launch_permis, #pt_btn_launch_permis_card, .btn-launch-permis, [data-action="launch-permis"]'); if (!btn) return;
+                                                        e.preventDefault(); e.stopPropagation();
+                                                        const pid = btn.getAttribute('data-dossier-id') || window.__getCurrentParticulierId();
+                                                        window.__openPermisModal(pid);
+                                                    });
+                                                    // Soumission création permis
+                                                    document.addEventListener('submit', async (e)=>{
+                                                        const form = e.target.closest('#launchPermisForm'); if (!form) return;
+                                                        e.preventDefault();
+                                                        const modalEl = document.getElementById('launchPermisModal');
+                                                        const pid = modalEl?.getAttribute('data-pid') || window.__currentParticulierId || '';
+                                                        const fb = modalEl?.querySelector('#pt_feedback_permis');
+                                                        if (!pid) { alert('Particulier introuvable'); return; }
+                                                        const fd = new FormData(form);
+                                                        const motif = (fd.get('motif')||'').toString().trim();
+                                                        const dd = (fd.get('date_debut')||'').toString();
+                                                        const duree = parseInt((fd.get('duree')||'14').toString(),10) || 14;
+                                                        if (!motif || !dd) { alert('Veuillez renseigner le motif et la date de début'); return; }
+                                                        // Calcul date_fin
+                                                        const d = new Date(dd);
+                                                        if (isNaN(d.getTime())) { alert('Date de début invalide'); return; }
+                                                        const d2 = new Date(d.getTime()); d2.setDate(d2.getDate() + duree);
+                                                        const yyyy2 = d2.getFullYear(); const mm2 = String(d2.getMonth()+1).padStart(2,'0'); const day2 = String(d2.getDate()).padStart(2,'0');
+                                                        const df = `${yyyy2}-${mm2}-${day2}`;
+                                                        // UI state
+                                                        const submitBtn = modalEl?.querySelector('#pt_submit_permis'); if (submitBtn) submitBtn.disabled = true;
+                                                        if (fb) { fb.className = 'alert alert-info'; fb.textContent = 'Emission en cours...'; }
+                                                        try {
+                                                          const body = new URLSearchParams({ cible_type: 'particulier', cible_id: String(pid), motif, date_debut: dd, date_fin: df }).toString();
+                                                          const resp = await fetch('/permis-temporaire', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body });
+                                                          const data = await resp.json();
+                                                          if (!resp.ok || !data.ok) throw new Error(data.error||'Erreur serveur');
+                                                          if (fb) { fb.className = 'alert alert-success'; fb.textContent = 'Permis temporaire émis avec succès'; }
+                                                          try { window.showSuccess && window.showSuccess('Permis temporaire émis'); } catch {}
+                                                          try { form.reset(); } catch {}
+                                                          setTimeout(()=>{ try { bootstrap.Modal.getInstance(modalEl)?.hide(); } catch {} }, 600);
+                                                          // Rafraîchir la bannière
+                                                          const tr = document.querySelector(`tr[data-id="${pid}"]`);
+                                                          if (tr) fillParticulierModalFromRow(tr);
+                                                        } catch(err){
+                                                          if (fb) { fb.className = 'alert alert-danger'; fb.textContent = err.message || 'Erreur inconnue'; }
+                                                        } finally {
+                                                          if (submitBtn) submitBtn.disabled = false;
+                                                        }
+                                                    });
+                                                    // Clôture du permis temporaire actif
+                                                    document.addEventListener('click', async (e)=>{
+                                                        const btn = e.target.closest('#pt_btn_close_permis'); if (!btn) return;
+                                                        const id = btn.getAttribute('data-permis-id')||''; if (!id) return;
+                                                        if (!confirm('Confirmer la clôture de ce permis temporaire ?')) return;
+                                                        try {
+                                                          const resp = await fetch(`/permis-temporaire/${id}/close`, { method: 'POST' });
+                                                          const data = await resp.json();
+                                                          if (!resp.ok || !data.ok) throw new Error(data.error||'Erreur serveur');
+                                                          const banner = document.getElementById('pt_permis_banner'); if (banner) banner.classList.add('d-none');
+                                                          try { window.showSuccess && window.showSuccess('Permis temporaire clôturé'); } catch {}
+                                                        } catch(err){ alert(err.message||'Erreur réseau'); }
+                                                    });
                                                     // Click handler: Détails
                                                     document.addEventListener('click', (e)=>{
                                                         const btnDetails = e.target.closest('.btn-part-details'); if (!btnDetails) return;
@@ -1544,6 +1786,9 @@
                                                         window.__lastParticulierCtx = { id, nom, numero };
                                                         const modalEl = document.getElementById('particulierActionsModal');
                                                         if (modalEl) modalEl.setAttribute('data-dossier-id', id);
+                                                        // Also tag the action buttons inside actions modal with the dossier id
+                                                        const btnPermisCard = document.getElementById('pt_btn_launch_permis_card');
+                                                        if (btnPermisCard) btnPermisCard.setAttribute('data-dossier-id', id);
                                                         try { localStorage.setItem('recent_particulier_ctx', JSON.stringify({id, nom, numero})); } catch {}
                                                     }
                                                     document.addEventListener('click', (e)=>{
@@ -1837,7 +2082,7 @@
                         <div class="flex-grow-1">
                           <h6 class="card-title mb-1">Émettre un permis de conduire temporaire</h6>
                           <p class="text-muted small mb-2">Créer un permis provisoire pour une durée limitée.</p>
-                          <button class="btn btn-sm btn-primary" disabled>Prochainement</button>
+                          <button type="button" class="btn btn-sm btn-primary" id="pt_btn_launch_permis_card" data-action="launch-permis" onclick="return window.__launchPermisFromBtn ? window.__launchPermisFromBtn(event, this) : false;">Émettre maintenant</button>
                         </div>
                       </div>
                     </div>
@@ -1873,7 +2118,7 @@
                         <div class="flex-grow-1">
                           <h6 class="card-title mb-1">Arrestation de l'individu</h6>
                           <p class="text-muted small mb-2">Consigner une interpellation et motif.</p>
-                          <button class="btn btn-sm btn-danger" disabled>Prochainement</button>
+                          <button type="button" class="btn btn-sm btn-danger" id="pa_action_arrest_btn" data-action="arrestation">Consigner une arrestation</button>
                         </div>
                       </div>
                     </div>
@@ -1900,6 +2145,93 @@
         </div>
 
         <!-- Vendor js -->
+
+        <!-- Modal: Arrestation de l'individu -->
+        <div class="modal fade" id="arrestationModal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title">Consigner une arrestation</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+              </div>
+              <div class="modal-body">
+                <form id="arrestationForm">
+                  <input type="hidden" name="particulier_id" id="arr_particulier_id">
+                  <div class="mb-3">
+                    <label class="form-label">Date et heure</label>
+                    <input type="datetime-local" class="form-control" name="date_arrestation" id="arr_datetime">
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">Lieu (optionnel)</label>
+                    <input type="text" class="form-control" name="lieu" id="arr_lieu" placeholder="Ex: Rond-point Victoire">
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">Motif</label>
+                    <textarea class="form-control" name="motif" id="arr_motif" rows="3" placeholder="Décrivez le motif de l'interpellation" required></textarea>
+                  </div>
+                </form>
+                <div class="alert d-none" id="arr_alert"></div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-danger" id="arr_submit_btn">Enregistrer</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <script>
+        document.addEventListener('DOMContentLoaded', function(){
+          // Open arrestation modal with context from actions modal
+          document.addEventListener('click', function(e){
+            const btn = e.target.closest('#pa_action_arrest_btn');
+            if (!btn) return;
+            e.preventDefault();
+            const modalActions = document.getElementById('particulierActionsModal');
+            const pid = modalActions ? modalActions.getAttribute('data-dossier-id') : (window.__lastParticulierCtx && window.__lastParticulierCtx.id);
+            if (!pid) { alert('Veuillez sélectionner un particulier.'); return; }
+            const now = new Date();
+            const pad = (n)=> String(n).padStart(2,'0');
+            const localISO = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+            const form = document.getElementById('arrestationForm');
+            if (form) { form.reset(); }
+            document.getElementById('arr_particulier_id').value = String(pid);
+            document.getElementById('arr_datetime').value = localISO;
+            const alertBox = document.getElementById('arr_alert');
+            if (alertBox) { alertBox.className = 'alert d-none'; alertBox.textContent=''; }
+            try { bootstrap.Modal.getOrCreateInstance(document.getElementById('arrestationModal')).show(); } catch {}
+          });
+
+          // Submit arrestation
+          const arrSubmit = document.getElementById('arr_submit_btn');
+          if (arrSubmit) {
+            arrSubmit.addEventListener('click', async function(){
+              const form = document.getElementById('arrestationForm');
+              const alertBox = document.getElementById('arr_alert');
+              if (!form) return;
+              const fd = new FormData(form);
+              const motif = (fd.get('motif')||'').toString().trim();
+              if (!motif) {
+                if (alertBox) { alertBox.className='alert alert-warning'; alertBox.textContent='Veuillez saisir le motif.'; alertBox.classList.remove('d-none'); }
+                return;
+              }
+              try {
+                const resp = await fetch('/arrestation', { method:'POST', body: fd });
+                const data = await resp.json().catch(()=>({ok:false,error:'Invalid response'}));
+                if (data && (data.ok || data.state === true)) {
+                  if (alertBox) { alertBox.className='alert alert-success'; alertBox.textContent='Arrestation enregistrée.'; alertBox.classList.remove('d-none'); }
+                  setTimeout(()=>{ try { bootstrap.Modal.getOrCreateInstance(document.getElementById('arrestationModal')).hide(); } catch {} }, 600);
+                } else {
+                  const msg = (data && (data.error||data.message)) || 'Erreur lors de l\'enregistrement';
+                  if (alertBox) { alertBox.className='alert alert-danger'; alertBox.textContent=msg; alertBox.classList.remove('d-none'); }
+                }
+              } catch (e) {
+                if (alertBox) { alertBox.className='alert alert-danger'; alertBox.textContent='Erreur réseau'; alertBox.classList.remove('d-none'); }
+              }
+            });
+          }
+        });
+        </script>
 
                     </div>
                     <!-- container -->

@@ -23,6 +23,8 @@ use Control\AccidentController;
 use Control\AvisRechercheController;
 use Control\LogoutController;
 use Control\SearchController;
+use Control\PermisTemporaireController;
+use Control\ArrestationController;
 
 //initialisation de la superglobal SESSION
 if(!isset($_SESSION))
@@ -41,6 +43,49 @@ $router->map('GET','/',function (){
         require_once 'views/home2.php';
     }else{
         require_once 'views/login.php';
+    }
+});
+
+// API: Arrestation d'un particulier - consigner
+$router->map('POST','/arrestation', function(){
+    // Réponse JSON propre
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $ctrl = new ArrestationController();
+        $res = $ctrl->create($_POST);
+        ob_clean(); echo json_encode($res);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
+// API: Arrestations - lister par particulier
+$router->map('GET','/particulier/[i:id]/arrestations', function($id){
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $ctrl = new ArrestationController();
+        $rows = $ctrl->listByParticulier((int)$id);
+        ob_clean(); echo json_encode(['ok'=>true,'data'=>$rows]);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
+// API: Permis temporaire - créer
+$router->map('POST','/permis-temporaire', function(){
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $ctrl = new PermisTemporaireController();
+        $res = $ctrl->create($_POST);
+        ob_clean(); echo json_encode($res);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Server error']);
     }
 });
 
@@ -80,6 +125,34 @@ $router->map('POST','/avis-recherche/[i:id]/close', function($id){
     if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
     try {
         $ctrl = new AvisRechercheController();
+        $res = $ctrl->close((int)$id);
+        ob_clean(); echo json_encode($res);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
+// API: Permis temporaire - lister par particulier
+$router->map('GET','/particulier/[i:id]/permis-temporaire', function($id){
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $ctrl = new PermisTemporaireController();
+        $rows = $ctrl->listByParticulier((int)$id);
+        ob_clean(); echo json_encode(['ok'=>true,'data'=>$rows]);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
+// API: Permis temporaire - clore
+$router->map('POST','/permis-temporaire/[i:id]/close', function($id){
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $ctrl = new PermisTemporaireController();
         $res = $ctrl->close((int)$id);
         ob_clean(); echo json_encode($res);
     } catch (\Throwable $e) {
