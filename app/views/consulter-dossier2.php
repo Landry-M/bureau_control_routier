@@ -207,6 +207,31 @@
 
         <script>
         (function(){
+          // Helper: show a quick success message (Bootstrap-like alert)
+          window.showSuccess = function(msg){
+            try {
+              let c = document.getElementById('global-toast-container');
+              if (!c) {
+                c = document.createElement('div');
+                c.id = 'global-toast-container';
+                c.style.position = 'fixed';
+                c.style.top = '1rem';
+                c.style.right = '1rem';
+                c.style.zIndex = '1080';
+                c.style.pointerEvents = 'none';
+                document.body.appendChild(c);
+              }
+              const el = document.createElement('div');
+              el.className = 'alert alert-success shadow mb-2';
+              el.textContent = msg || 'Succès';
+              el.style.pointerEvents = 'auto';
+              c.appendChild(el);
+              setTimeout(()=>{
+                try { el.remove(); } catch{}
+                if (c && !c.childElementCount) { try { c.remove(); } catch{} }
+              }, 2500);
+            } catch {}
+          }
           const actionsModal = document.getElementById('particulierActionsModal');
           const assocModal = document.getElementById('associerVehiculeModal');
           const inputPid = document.getElementById('av_particulier_id');
@@ -427,7 +452,6 @@
                                                   </div>
                                                 </div>
 
-                                            <?php require_once __DIR__ . '/_partials/_modal_avis_recherche.php'; ?>
 
                                             <script>
                                                     (function(){
@@ -1412,113 +1436,31 @@
                                                             if (vehTbody) vehTbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Aucun véhicule</td></tr>';
                                                         }
                                                     }
-                                                    // Ouvrir le modal de création d'avis (depuis différents boutons)
+                                                    // Ouvrir le modal de création d'avis (Bootstrap 5 uniquement)
                                                     document.addEventListener('click', (e)=>{
                                                         const btn = e.target.closest('#pt_btn_launch_avis, .btn-launch-avis, [data-action="launch-avis"]'); if (!btn) return;
-                                                        // Empêcher le Data API Bootstrap d'interférer
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        // Eviter conflit aria-hidden: retirer le focus avant de cacher le modal courant
-                                                        try { if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur(); } catch(_){}
-                                                        try { if (btn && typeof btn.blur === 'function') btn.blur(); } catch(_){}
-                                                        const launchEl = document.getElementById('launchAvisModal');
-                                                        if (!launchEl) return;
-                                                        // S'assurer que le modal d'avis est au niveau body (pas imbriqué dans un autre modal)
-                                                        try {
-                                                            if (launchEl.parentElement && launchEl.parentElement.closest && launchEl.parentElement.closest('.modal')) {
-                                                                document.body.appendChild(launchEl);
-                                                            }
-                                                        } catch(_){}
+                                                        e.preventDefault(); e.stopPropagation();
+                                                        // Retirer le focus pour éviter conflit aria-hidden
+                                                        try { document.activeElement?.blur?.(); btn?.blur?.(); } catch(_){}
+                                                        const launchEl = document.getElementById('launchAvisModal'); if (!launchEl) return;
+                                                        // S'assurer que le modal est sous body
+                                                        if (launchEl.parentElement && launchEl.parentElement !== document.body) { document.body.appendChild(launchEl); }
                                                         const pid = document.querySelector('#particulierDetailsModal [data-id]')?.getAttribute('data-id')
                                                             || document.querySelector('tr[data-id].selected')?.getAttribute('data-id')
-                                                            || document.querySelector('tr[data-id]')?.getAttribute('data-id')
-                                                            || '';
+                                                            || document.querySelector('tr[data-id]')?.getAttribute('data-id') || '';
                                                         launchEl.setAttribute('data-pid', pid);
-                                                        // Trouver le modal courant (celui qui contient le bouton cliqué)
                                                         const currentModalEl = btn.closest('.modal');
-                                                        let currentModalInst = null;
+                                                        const showLaunch = ()=>{ requestAnimationFrame(()=>{ bootstrap.Modal.getOrCreateInstance(launchEl).show(); launchEl.focus?.({preventScroll:true}); }); };
                                                         if (currentModalEl && currentModalEl.classList.contains('show')) {
-                                                            // Après fermeture du modal courant, ouvrir le modal d'avis
-                                                            const onCurrentHidden = function(){
-                                                                currentModalEl.removeEventListener('hidden.bs.modal', onCurrentHidden);
-                                                                // Déférer à la prochaine frame pour éviter tout focus dans un aria-hidden
-                                                                requestAnimationFrame(()=>{
-                                                                    // Nettoyer d'éventuels backdrops résiduels et préparer l'affichage
-                                                                    try { document.querySelectorAll('.modal-backdrop').forEach(el=>el.remove()); } catch(_){}
-                                                                    try { document.body.classList.add('modal-open'); } catch(_){}
-                                                                    try { launchEl.style.zIndex = '1060'; } catch(_){}
-                                                                    try {
-                                                                        if (window.jQuery && $.fn && $.fn.modal) {
-                                                                            $('#launchAvisModal').modal('show');
-                                                                        } else {
-                                                                            const m = (window.bootstrap && bootstrap.Modal && (bootstrap.Modal.getInstance ? bootstrap.Modal.getInstance(launchEl) : null)) || (window.bootstrap && bootstrap.Modal ? new bootstrap.Modal(launchEl) : null);
-                                                                            if (m && m.show) m.show(); else openModalFallback(launchEl);
-                                                                        }
-                                                                        // Forcer visibilité si nécessaire
-                                                                        try { launchEl.style.display = 'block'; } catch(_){}
-                                                                        try { launchEl.classList.add('show'); } catch(_){}
-                                                                        try { launchEl.setAttribute('aria-hidden','false'); launchEl.setAttribute('aria-modal','true'); launchEl.setAttribute('role','dialog'); } catch(_){}
-                                                                        try {
-                                                                            if (!document.querySelector('.modal-backdrop')) {
-                                                                                const bd = document.createElement('div');
-                                                                                bd.className = 'modal-backdrop fade show';
-                                                                                bd.style.zIndex = '1050';
-                                                                                document.body.appendChild(bd);
-                                                                            }
-                                                                        } catch(_){}
-                                                                    } catch(_) { openModalFallback(launchEl); }
-                                                                    // Forcer le focus après affichage
-                                                                    setTimeout(()=>{ try { launchEl.focus({preventScroll:true}); } catch(_){} }, 50);
-                                                                });
-                                                            };
-                                                            currentModalEl.addEventListener('hidden.bs.modal', onCurrentHidden);
-                                                            try {
-                                                                currentModalInst = (bootstrap.Modal.getInstance ? bootstrap.Modal.getInstance(currentModalEl) : null) || new bootstrap.Modal(currentModalEl);
-                                                                currentModalInst.hide();
-                                                            } catch(_) {
-                                                                closeModalFallback(currentModalEl);
-                                                                onCurrentHidden();
-                                                            }
-                                                            // Restaurer le modal courant après fermeture du modal d'avis
-                                                            const onLaunchHidden = function(){
+                                                            const onHidden = ()=>{ currentModalEl.removeEventListener('hidden.bs.modal', onHidden); showLaunch(); };
+                                                            currentModalEl.addEventListener('hidden.bs.modal', onHidden);
+                                                            bootstrap.Modal.getOrCreateInstance(currentModalEl).hide();
+                                                            launchEl.addEventListener('hidden.bs.modal', function onLaunchHidden(){
                                                                 launchEl.removeEventListener('hidden.bs.modal', onLaunchHidden);
-                                                                try {
-                                                                    if (window.jQuery && $.fn && $.fn.modal) {
-                                                                        $(currentModalEl).modal('show');
-                                                                    } else {
-                                                                        const inst = (window.bootstrap && bootstrap.Modal && (bootstrap.Modal.getInstance ? bootstrap.Modal.getInstance(currentModalEl) : null)) || (window.bootstrap && bootstrap.Modal ? new bootstrap.Modal(currentModalEl) : null);
-                                                                        if (inst && inst.show) inst.show(); else openModalFallback(currentModalEl);
-                                                                    }
-                                                                } catch(_) { openModalFallback(currentModalEl); }
-                                                            };
-                                                            launchEl.addEventListener('hidden.bs.modal', onLaunchHidden);
+                                                                bootstrap.Modal.getOrCreateInstance(currentModalEl).show();
+                                                            });
                                                         } else {
-                                                            // Aucun modal ouvert: ouvrir directement
-                                                            try {
-                                                                // Nettoyer backdrops résiduels
-                                                                try { document.querySelectorAll('.modal-backdrop').forEach(el=>el.remove()); } catch(_){}
-                                                                try { document.body.classList.add('modal-open'); } catch(_){}
-                                                                try { launchEl.style.zIndex = '1060'; } catch(_){}
-                                                                if (window.jQuery && $.fn && $.fn.modal) {
-                                                                    $('#launchAvisModal').modal('show');
-                                                                } else {
-                                                                    const m = (window.bootstrap && bootstrap.Modal && (bootstrap.Modal.getInstance ? bootstrap.Modal.getInstance(launchEl) : null)) || (window.bootstrap && bootstrap.Modal ? new bootstrap.Modal(launchEl) : null);
-                                                                    if (m && m.show) m.show(); else openModalFallback(launchEl);
-                                                                }
-                                                                // Forcer visibilité si nécessaire
-                                                                try { launchEl.style.display = 'block'; } catch(_){}
-                                                                try { launchEl.classList.add('show'); } catch(_){}
-                                                                try { launchEl.setAttribute('aria-hidden','false'); launchEl.setAttribute('aria-modal','true'); launchEl.setAttribute('role','dialog'); } catch(_){}
-                                                                try {
-                                                                    if (!document.querySelector('.modal-backdrop')) {
-                                                                        const bd = document.createElement('div');
-                                                                        bd.className = 'modal-backdrop fade show';
-                                                                        bd.style.zIndex = '1050';
-                                                                        document.body.appendChild(bd);
-                                                                    }
-                                                                } catch(_){}
-                                                                setTimeout(()=>{ try { launchEl.focus({preventScroll:true}); } catch(_){} }, 50);
-                                                            } catch(_) { openModalFallback(launchEl); }
+                                                            showLaunch();
                                                         }
                                                     });
                                                     // Soumission création d'avis
@@ -1539,7 +1481,18 @@
                                                             });
                                                             const data = await resp.json();
                                                             if (!resp.ok || !data.ok) throw new Error(data.error||'Erreur serveur');
-                                                            // Close modal
+                                                            // Succès: notifier puis réinitialiser le formulaire et fermer la modal
+                                                            try { window.showSuccess && window.showSuccess('Avis de recherche créé avec succès'); } catch(_){ }
+                                                            try {
+                                                                const f = document.getElementById('launchAvisForm');
+                                                                if (f) {
+                                                                    f.reset();
+                                                                    const sel = f.querySelector('select[name="niveau"]');
+                                                                    if (sel) sel.value = 'moyen';
+                                                                    const ta = f.querySelector('textarea[name="motif"]');
+                                                                    if (ta) ta.value = '';
+                                                                }
+                                                            } catch(_){ }
                                                             try { bootstrap.Modal.getInstance(modalEl)?.hide(); } catch(_) { modalEl.classList.remove('show'); modalEl.style.display='none'; }
                                                             // Refresh banner
                                                             const tr = document.querySelector(`tr[data-id="${pid}"]`);
@@ -1558,6 +1511,8 @@
                                                             // Masquer la bannière et recharger
                                                             const banner = document.getElementById('pt_avis_banner');
                                                             if (banner) banner.classList.add('d-none');
+                                                            // Succès: notifier l'utilisateur
+                                                            showSuccess('Avis de recherche clôturé avec succès');
                                                         } catch(err){ alert(err.message||'Erreur réseau'); }
                                                     });
                                                     // Click handler: Détails
@@ -2213,6 +2168,43 @@
           </div>
         </div>
 
+        <!-- Flash helper (global, resilient) -->
+        <script>
+          (function(){
+            if (!window.showSuccess) {
+              window.showSuccess = function(msg){
+                try {
+                  var c = document.getElementById('global-toast-container');
+                  if (!c) {
+                    c = document.createElement('div');
+                    c.id = 'global-toast-container';
+                    c.style.position = 'fixed';
+                    c.style.top = '1rem';
+                    c.style.right = '1rem';
+                    c.style.zIndex = '5000';
+                    c.style.pointerEvents = 'none';
+                    c.style.maxWidth = '90vw';
+                    document.body.appendChild(c);
+                  }
+                  var el = document.createElement('div');
+                  el.className = 'alert alert-success shadow mb-2';
+                  el.textContent = msg || 'Succès';
+                  el.style.pointerEvents = 'auto';
+                  // Inline safety styles in case Bootstrap CSS is missing
+                  el.style.backgroundColor = el.style.backgroundColor || '#198754';
+                  el.style.color = el.style.color || '#fff';
+                  el.style.border = el.style.border || '1px solid #146c43';
+                  el.style.borderRadius = el.style.borderRadius || '0.25rem';
+                  el.style.padding = el.style.padding || '0.5rem 0.75rem';
+                  el.style.boxShadow = el.style.boxShadow || '0 .5rem 1rem rgba(0,0,0,.15)';
+                  c.appendChild(el);
+                  setTimeout(function(){ try{ el.remove(); }catch(e){} if (c && !c.childElementCount) { try{ c.remove(); }catch(e){} } }, 2500);
+                } catch (e) { try { alert(msg || 'Succès'); } catch(_){} }
+              }
+            }
+          })();
+        </script>
+
         <!-- Vendor js -->
         <script src="assets/js/vendor.min.js"></script>
 
@@ -2235,7 +2227,7 @@
 
         <script>
         (function(){
-          // Restore handler for .btn-assign-contrav (assign contravention to conducteur/véhicule/entreprise)
+          // Handler .btn-assign-contrav (Bootstrap 5 uniquement)
           document.addEventListener('click', function(e){
             const btn = e.target.closest('.btn-assign-contrav');
             if (!btn) return;
@@ -2258,47 +2250,18 @@
             if (infoEl) { infoEl.textContent = targetLabel; infoEl.style.display = targetLabel ? 'block' : 'none'; }
 
             // Ensure modal exists directly under body
-            try { if (modalAssign.parentElement && modalAssign.parentElement !== document.body) document.body.appendChild(modalAssign); } catch(_){ }
+            if (modalAssign.parentElement && modalAssign.parentElement !== document.body) document.body.appendChild(modalAssign);
 
             // If clicked inside another modal, close it first then open assign
             const currentModal = btn.closest('.modal');
-            const openAssign = function(){
-              try {
-                if (window.jQuery && $.fn && $.fn.modal) {
-                  $('#assignContravModal').modal('show');
-                } else if (window.bootstrap && bootstrap.Modal) {
-                  (bootstrap.Modal.getInstance(modalAssign) || new bootstrap.Modal(modalAssign)).show();
-                } else {
-                  // Fallback
-                  modalAssign.style.display = 'block';
-                  modalAssign.classList.add('show');
-                  modalAssign.setAttribute('aria-hidden','false');
-                  const bd = document.createElement('div'); bd.className = 'modal-backdrop fade show'; document.body.appendChild(bd);
-                  document.body.classList.add('modal-open');
-                }
-              } catch(_){
-                modalAssign.style.display = 'block';
-                modalAssign.classList.add('show');
-              }
-            };
+            const openAssign = function(){ requestAnimationFrame(()=>{ bootstrap.Modal.getOrCreateInstance(modalAssign).show(); }); };
             if (currentModal && currentModal !== modalAssign && currentModal.classList.contains('show')) {
               const onHidden = function(){
                 currentModal.removeEventListener('hidden.bs.modal', onHidden);
                 requestAnimationFrame(openAssign);
               };
               currentModal.addEventListener('hidden.bs.modal', onHidden);
-              try {
-                if (window.jQuery && $.fn && $.fn.modal) {
-                  $(currentModal).modal('hide');
-                } else if (window.bootstrap && bootstrap.Modal) {
-                  (bootstrap.Modal.getInstance(currentModal) || new bootstrap.Modal(currentModal)).hide();
-                } else {
-                  currentModal.classList.remove('show');
-                  currentModal.style.display = 'none';
-                  document.querySelectorAll('.modal-backdrop').forEach(b=>b.remove());
-                  onHidden();
-                }
-              } catch(_){ onHidden(); }
+              bootstrap.Modal.getOrCreateInstance(currentModal).hide();
             } else {
               openAssign();
             }
@@ -2428,6 +2391,8 @@
           });
         })();
         </script>
+
+        <?php require_once '_partials/_modal_avis_recherche.php'; ?>
 
          <!-- Include Modal creation de compte agent -->
          <?php require_once '_partials/_modal_agent_account.php'; ?>
