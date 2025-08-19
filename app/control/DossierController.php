@@ -27,31 +27,21 @@ class DossierController extends Db {
                 ->order_by_desc('id')
                 ->find_array();
                 
-            // Étape 2: récupérer toutes les contraventions liées aux conducteurs par numero_permis
+            // Étape 2: récupérer toutes les contraventions liées aux conducteurs par id (clé primaire)
             $contraventionsByDossier = [];
             if (!empty($conducteurs)) {
-                // Construire un index numero_permis -> conducteur_id
-                $mapPermisToId = [];
-                foreach ($conducteurs as $c) {
-                    if (!empty($c['numero_permis'])) {
-                        $mapPermisToId[$c['numero_permis']] = $c['id'];
-                    }
-                }
-
-                $permisList = array_filter(array_keys($mapPermisToId), function($val) {
+                $ids = array_filter(array_column($conducteurs, 'id'), function($val){
                     return $val !== null && $val !== '';
                 });
-                if (!empty($permisList)) {
-                    // Récupérer les contraventions pour ces numeros de permis
+                if (!empty($ids)) {
                     $rowsCv = ORM::for_table('contraventions')
                         ->where('type_dossier', 'conducteur_vehicule')
-                        ->where_in('dossier_id', $permisList)
+                        ->where_in('dossier_id', $ids)
                         ->order_by_desc('date_infraction')
                         ->find_array();
                     foreach ($rowsCv as $cv) {
-                        $dossierId = $cv['dossier_id'] ?? null;
-                        if ($dossierId !== null && isset($mapPermisToId[$dossierId])) {
-                            $cid = $mapPermisToId[$dossierId];
+                        $cid = $cv['dossier_id'] ?? null;
+                        if ($cid !== null) {
                             if (!isset($contraventionsByDossier[$cid])) $contraventionsByDossier[$cid] = [];
                             $contraventionsByDossier[$cid][] = [
                                 'id' => $cv['id'] ?? null,
@@ -164,29 +154,21 @@ class DossierController extends Db {
                 ->order_by_desc('id')
                 ->find_array();
 
-            // Indexer par RCCM (numero_siret) pour relier aux contraventions
+            // Contraventions liées aux entreprises par id (clé primaire)
             $contraventionsByEntreprise = [];
             if (!empty($entreprises)) {
-                $mapRccmToId = [];
-                foreach ($entreprises as $e) {
-                    $rccm = (string)($e['rccm'] ?? '');
-                    if ($rccm !== '') {
-                        $mapRccmToId[$rccm] = $e['id'];
-                    }
-                }
-                $rccms = array_filter(array_keys($mapRccmToId), function($val) {
+                $eids = array_filter(array_column($entreprises, 'id'), function($val){
                     return $val !== null && $val !== '';
                 });
-                if (!empty($rccms)) {
+                if (!empty($eids)) {
                     $rowsCv = ORM::for_table('contraventions')
                         ->where('type_dossier', 'entreprises')
-                        ->where_in('dossier_id', $rccms)
+                        ->where_in('dossier_id', $eids)
                         ->order_by_desc('date_infraction')
                         ->find_array();
                     foreach ($rowsCv as $cv) {
-                        $did = (string)($cv['dossier_id'] ?? '');
-                        if ($did !== '' && isset($mapRccmToId[$did])) {
-                            $eid = $mapRccmToId[$did];
+                        $eid = $cv['dossier_id'] ?? null;
+                        if ($eid !== null) {
                             if (!isset($contraventionsByEntreprise[$eid])) $contraventionsByEntreprise[$eid] = [];
                             $contraventionsByEntreprise[$eid][] = [
                                 'id' => $cv['id'] ?? null,

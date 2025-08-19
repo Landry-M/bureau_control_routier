@@ -13,6 +13,16 @@ class SearchController extends Db {
         try {
             $pdo = $this->getConnexion();
             $q = isset($_GET['q']) ? trim((string)$_GET['q']) : '';
+            // Dedicated plate-only search: if `plate` provided, force table vehicule_plaque
+            $plate = isset($_GET['plate']) ? trim((string)$_GET['plate']) : '';
+            // Backend pagination controls
+            $perType = isset($_GET['per_type']) ? max(1, min(100, (int)$_GET['per_type'])) : 10; // default 10
+            $filterType = isset($_GET['type']) ? preg_replace('/[^a-zA-Z0-9_]/', '', (string)$_GET['type']) : '';
+            if ($plate !== '') {
+                $q = $plate;
+                $filterType = 'vehicule_plaque';
+            }
+            $page = isset($_GET['page']) ? max(0, (int)$_GET['page']) : 0;
             $results = [];
             if ($q !== '') {
                 $like = '%' . $q . '%';
@@ -22,8 +32,10 @@ class SearchController extends Db {
                 $tables = $tablesStmt->fetchAll(\PDO::FETCH_COLUMN) ?: [];
 
                 foreach ($tables as $table) {
-                    // Skip some technical tables if needed
-                    if (in_array($table, ['migrations'])) { continue; }
+                    // Skip some technical/sensitive tables
+                    if (in_array($table, ['migrations', 'activites', 'users'])) { continue; }
+                    // If a specific type is requested, skip others
+                    if ($filterType !== '' && $table !== $filterType) { continue; }
 
                     // Find primary key column
                     $pkStmt = $pdo->prepare("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_KEY='PRI' ORDER BY ORDINAL_POSITION LIMIT 1");
@@ -40,7 +52,10 @@ class SearchController extends Db {
                     $colNames = array_column($cols, 'COLUMN_NAME');
                     // Build WHERE col LIKE ? OR ...
                     $where = implode(' OR ', array_map(function($c){ return "`$c` LIKE ?"; }, $colNames));
-                    $sql = "SELECT `$pk` AS id, '$table' AS type, CONCAT_WS(' ', " . implode(', ', array_map(function($c){ return "`$c`"; }, array_slice($colNames, 0, 4))) . ") AS title FROM `$table` WHERE $where LIMIT 5";
+                    // LIMIT/OFFSET: only apply OFFSET when filtering by a single type (to avoid mixing offsets across types)
+                    $limit = (int)$perType;
+                    $offset = ($filterType !== '' ? (int)$page * $limit : 0);
+                    $sql = "SELECT `$pk` AS id, '$table' AS type, CONCAT_WS(' ', " . implode(', ', array_map(function($c){ return "`$c`"; }, array_slice($colNames, 0, 4))) . ") AS title FROM `$table` WHERE $where LIMIT $limit" . ($offset > 0 ? " OFFSET $offset" : "");
                     $stmt = $pdo->prepare($sql);
                     // bind likes for each column
                     $params = array_fill(0, count($colNames), $like);
@@ -63,6 +78,70 @@ class SearchController extends Db {
 
             // Render view
             $query = $q; // for view
+            // Expose pagination parameters to the view for potential UI usage
+            $per_type = $perType;
+            $type = $filterType;
+            $page_index = $page;
+            // If searching plates specifically, expose candidates and related contraventions
+            $vehiculeRecord = null; // selected/first record
+            $vehiculeContraventions = []; // of selected/first record
+            $vehiculeCandidates = []; // all matching by exact plate (case-insensitive)
+            $vehiculeContraventionsById = []; // map id => list
+            $vehiculePk = null; // primary key column name for vehicule_plaque
+            if ($type === 'vehicule_plaque' && !empty($results)) {
+                try {
+                    $searchedPlate = isset($_GET['plate']) ? trim((string)$_GET['plate']) : '';
+                    $searchedPlateUpper = strtoupper($searchedPlate);
+                    // Determine PK of table
+                    $pkStmt = $pdo->prepare("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_KEY='PRI' ORDER BY ORDINAL_POSITION LIMIT 1");
+                    $pkStmt->execute([$this->dbName, 'vehicule_plaque']);
+                    $pk = $pkStmt->fetchColumn();
+                    $vehiculePk = $pk ?: null;
+                    if ($pk) {
+                        // Load candidates matching exact plate (case-insensitive). If none, fallback to IDs from $results
+                        $candStmt = $pdo->prepare("SELECT * FROM `vehicule_plaque` WHERE UPPER(`plaque`) = :plaque ORDER BY `$pk` ASC");
+                        $candStmt->execute([':plaque' => $searchedPlateUpper]);
+                        $vehiculeCandidates = $candStmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+                        if (!$vehiculeCandidates) {
+                            // Fallback: get by the IDs returned in results (limited)
+                            $ids = array_values(array_unique(array_map(function($r){ return (int)($r['id'] ?? 0); }, $results)));
+                            if ($ids) {
+                                $in = implode(',', array_fill(0, count($ids), '?'));
+                                $stmt = $pdo->prepare("SELECT * FROM `vehicule_plaque` WHERE `$pk` IN ($in) ORDER BY `$pk` ASC");
+                                $stmt->execute($ids);
+                                $vehiculeCandidates = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+                            }
+                        }
+                        if ($vehiculeCandidates) {
+                            $vehiculeRecord = $vehiculeCandidates[0];
+                            // Load contraventions for all candidates in one pass
+                            $candIds = array_map(function($r) use ($pk){ return (string)($r[$pk] ?? ''); }, $vehiculeCandidates);
+                            $candIds = array_values(array_filter($candIds, function($v){ return $v !== ''; }));
+                            if ($candIds) {
+                                $cvs = ORM::for_table('contraventions')
+                                    ->where('type_dossier', 'vehicule_plaque')
+                                    ->where_in('dossier_id', $candIds)
+                                    ->order_by_desc('date_infraction')
+                                    ->find_array() ?: [];
+                                // group by dossier_id
+                                foreach ($candIds as $idKey) { $vehiculeContraventionsById[$idKey] = []; }
+                                foreach ($cvs as $cv) {
+                                    $did = (string)($cv['dossier_id'] ?? '');
+                                    if ($did !== '') { $vehiculeContraventionsById[$did][] = $cv; }
+                                }
+                                $firstId = (string)($vehiculeRecord[$pk] ?? '');
+                                $vehiculeContraventions = $vehiculeContraventionsById[$firstId] ?? [];
+                            }
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    error_log('[Search] load vehicule candidates failed: ' . $e->getMessage());
+                    $vehiculeRecord = null;
+                    $vehiculeContraventions = [];
+                    $vehiculeCandidates = [];
+                    $vehiculeContraventionsById = [];
+                }
+            }
             include 'views/search_results.php';
         } catch (Exception $e) {
             $_SESSION['error'] = 'Erreur recherche: ' . $e->getMessage();
@@ -110,6 +189,33 @@ class SearchController extends Db {
             }
 
             $record = $row;
+            // Si accident, charger aussi les témoins liés
+            if ($type === 'accidents' && isset($row[$pk])) {
+                try {
+                    $temStmt = $pdo->prepare("SELECT * FROM `temoins` WHERE `id_accident` = :aid ORDER BY `id` ASC");
+                    $temStmt->execute([':aid' => $id]);
+                    $record['temoins'] = $temStmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+                } catch (\Throwable $e) {
+                    // Ne pas bloquer la page détail en cas d'erreur témoin
+                    error_log('[Search detail] temoins load error: ' . $e->getMessage());
+                    $record['temoins'] = [];
+                }
+            }
+            // Charger les contraventions liées pour certains types de dossiers (ID primaire)
+            $contraventions = [];
+            try {
+                $typesAvecCv = ['conducteur_vehicule','vehicules','particuliers','entreprises'];
+                if (in_array($type, $typesAvecCv, true)) {
+                    $contraventions = ORM::for_table('contraventions')
+                        ->where('type_dossier', $type)
+                        ->where('dossier_id', (string)$id)
+                        ->order_by_desc('date_infraction')
+                        ->find_array() ?: [];
+                }
+            } catch (\Throwable $e) {
+                error_log('[Search detail] contraventions load error: ' . $e->getMessage());
+                $contraventions = [];
+            }
             $table = $type;
             include 'views/search_detail.php';
         } catch (Exception $e) {

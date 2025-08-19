@@ -4,10 +4,17 @@
 namespace Control;
 
 use Model\Db;
+use Model\ActivityLogger;
 use ORM;
 use Exception;  
 
 class ContraventionsController extends Db{
+    private $activityLogger;
+
+    public function __construct()
+    {
+        $this->activityLogger = new ActivityLogger();
+    }
 
     public function create($data)
     {
@@ -26,6 +33,22 @@ class ContraventionsController extends Db{
         $contravention->payed = $data['payed'];
         
         if ($contravention->save()) {
+            // Log creation
+            try {
+                $this->activityLogger->logCreate(
+                    $_SESSION['username'] ?? null,
+                    'contraventions',
+                    $contravention->id(),
+                    [
+                        'type_dossier' => $data['type_dossier'] ?? null,
+                        'dossier_id' => $data['dossier_id'] ?? null,
+                        'type_infraction' => $data['type_infraction'] ?? null,
+                        'amende' => $data['amende'] ?? null
+                    ]
+                );
+            } catch (\Throwable $e) {
+                // non bloquant
+            }
             $result['state'] = true;
             $result['message'] = 'Contravention enregistré avec succès';
             $result['data'] = $contravention->id;

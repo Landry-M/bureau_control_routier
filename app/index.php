@@ -13,11 +13,14 @@ use Control\DossierController;
 use Control\ParticulierController;
 use Control\VehiculePlaqueController;
 use Control\ContraventionsController;
+use Control\ContraventionController;
 use Control\ConducteurVehiculeController;
+use Control\ParticulierVehiculeController;
 use Control\AgentAccountController;
 use Control\ProfileController;
 use Control\AgentManagementController;
 use Control\AccidentController;
+use Control\AvisRechercheController;
 use Control\LogoutController;
 use Control\SearchController;
 
@@ -38,6 +41,175 @@ $router->map('GET','/',function (){
         require_once 'views/home2.php';
     }else{
         require_once 'views/login.php';
+    }
+});
+
+// API: Avis de recherche - créer
+$router->map('POST','/avis-recherche', function(){
+    // JSON propre
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $ctrl = new AvisRechercheController();
+        $res = $ctrl->create($_POST);
+        ob_clean(); echo json_encode($res);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
+// API: Avis de recherche - lister par particulier
+$router->map('GET','/particulier/[i:id]/avis', function($id){
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $ctrl = new AvisRechercheController();
+        $rows = $ctrl->listByParticulier((int)$id);
+        ob_clean(); echo json_encode(['ok'=>true,'data'=>$rows]);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
+// API: Avis de recherche - clore
+$router->map('POST','/avis-recherche/[i:id]/close', function($id){
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $ctrl = new AvisRechercheController();
+        $res = $ctrl->close((int)$id);
+        ob_clean(); echo json_encode($res);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
+// API: véhicules d'un particulier (JSON)
+$router->map('GET','/particulier/[i:id]/vehicules', function($id){
+    // Eviter toute pollution de sortie qui casse le JSON
+    error_reporting(0);
+    ini_set('display_errors', 0);
+    ob_start();
+
+    if(!isset($_SESSION['user'])){
+        ob_clean();
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(401);
+        echo json_encode(['ok'=>false,'error'=>'Unauthorized']);
+        return;
+    }
+    try {
+        $pid = (int)$id;
+        $ctrl = new ParticulierVehiculeController();
+        $rows = $ctrl->listByParticulier($pid);
+        // Log consultation
+        try {
+            (new \Model\ActivityLogger())->logView($_SESSION['user']['username'] ?? null, 'particulier_vehicules', ['particulier_id'=>$pid, 'results'=>count($rows)]);
+        } catch (\Throwable $e) {}
+        ob_clean();
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok'=>true,'data'=>$rows]);
+    } catch (\Throwable $e) {
+        ob_clean();
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
+// Associer un véhicule à un particulier
+$router->map('POST','/particulier/associer-vehicule', function(){
+    // Eviter toute pollution de sortie qui casse le JSON
+    error_reporting(0);
+    ini_set('display_errors', 0);
+    ob_start();
+
+    if (!isset($_SESSION['user'])) {
+        ob_clean();
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(401);
+        echo json_encode(['ok'=>false, 'error'=>'Unauthorized']);
+        return;
+    }
+    try {
+        $pid = $_POST['particulier_id'] ?? null;
+        $vid = $_POST['vehicule_plaque_id'] ?? null;
+        if (!$pid || !$vid) {
+            ob_clean();
+            header('Content-Type: application/json; charset=utf-8');
+            http_response_code(400);
+            echo json_encode(['ok'=>false, 'error'=>'Paramètres manquants']);
+            return;
+        }
+        $ctrl = new ParticulierVehiculeController();
+        $res = $ctrl->createAssociation($_POST);
+        ob_clean();
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($res);
+    } catch (\Throwable $e) {
+        ob_clean();
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(500);
+        echo json_encode(['ok'=>false, 'error'=>'Server error']);
+    }
+});
+
+// API: recherche véhicule par plaque
+$router->map('GET','/api/vehicules/search', function(){
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) {
+        http_response_code(401);
+        echo json_encode(['ok'=>false,'error'=>'Unauthorized']);
+        return;
+    }
+    try {
+        $plate = isset($_GET['plate']) ? (string)$_GET['plate'] : '';
+        $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10;
+        $ctrl = new VehiculePlaqueController();
+        $rows = $ctrl->searchByPlate($plate, $limit);
+        echo json_encode(['ok'=>true, 'data'=>$rows]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    }
+});
+
+// Admin: migration des contraventions -> remapper dossier_id vers ID primaire
+$router->map('GET','/admin/migrate-contraventions-dossier-id', function(){
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user']) || ($_SESSION['user']['role'] ?? '') !== 'superadmin') {
+        http_response_code(403);
+        echo json_encode(['ok'=>false, 'error'=>'Accès non autorisé']);
+        return;
+    }
+    try {
+        $ctrl = new ContraventionController();
+        $res = $ctrl->migrateDossierIdToPrimary();
+        echo json_encode($res);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+    }
+});
+
+// Créer une contravention
+$router->map('POST','/contravention/create', function(){
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) {
+        http_response_code(401);
+        echo json_encode(['ok'=>false, 'error'=>'Unauthorized']);
+        return;
+    }
+    try {
+        $ctrl = new ContraventionsController();
+        $res = $ctrl->create($_POST);
+        echo json_encode($res);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
     }
 });
 
@@ -178,15 +350,10 @@ $router->map('GET','/particulier/[i:id]/contraventions', function($id){
         return;
     }
     try {
-        // Utiliser le numero_national si fourni en query pour éviter une dépendance directe à ORM ici
-        $numero = isset($_GET['numero']) ? (string)$_GET['numero'] : '';
-        if ($numero === '') {
-            // Pas de numero fourni -> renvoyer liste vide (le front peut réessayer ou fournir le numero)
-            echo json_encode(['ok'=>true,'data'=>[]]);
-            return;
-        }
+        // Use the provided ID directly; mapping by numero_national is unnecessary here
+        $dossierId = (string)$id;
         $ctrl = new \Control\ContraventionController();
-        $rows = $ctrl->getByDossierIdAndType($numero, 'particuliers');
+        $rows = $ctrl->getByDossierIdAndType($dossierId, 'particuliers');
         echo json_encode(['ok'=>true,'data'=>$rows]);
     } catch (\Throwable $e) {
         http_response_code(500);
@@ -223,6 +390,18 @@ $router->map('POST','/contravention/update-payed', function(){
         }
         $ctrl = new \Control\ContraventionController();
         $res = $ctrl->updatePayed($id, $payed);
+        // Journalisation de la mise à jour du statut de paiement
+        try {
+            $status = null;
+            if (is_array($res)) { $status = $res['ok'] ?? ($res['state'] ?? null); }
+            (new \Model\ActivityLogger())->logUpdate(
+                $_SESSION['user']['username'] ?? null,
+                'contraventions',
+                $id,
+                null,
+                [ 'action' => 'update_payed', 'payed' => $payed, 'result' => $status ]
+            );
+        } catch (\Throwable $e) { /* ignore logging errors */ }
         echo json_encode($res);
     } catch (\Exception $e) {
         http_response_code(500);

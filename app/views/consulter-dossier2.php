@@ -38,6 +38,10 @@
             <!-- ========== Horizontal Menu Start ========== -->
            <?php require_once '_partials/_navbar.php'; ?>
             <!-- ========== Horizontal Menu End ========== -->
+            <?php $canEdit = isset($_SESSION['user']); ?>
+            <script>
+                window.CAN_EDIT = <?php echo $canEdit ? 'true' : 'false'; ?>;
+            </script>
             
             <div class="content-page">
                 <div class="content">
@@ -134,9 +138,24 @@
                                                                         <td><?= htmlspecialchars($c->nom ?? '') ?></td>
                                                                         <td><?= htmlspecialchars($c->numero_permis ?? '') ?></td>
                                                                         <td><?= htmlspecialchars($c->date_naissance ?? '') ?></td>
-                                                                        <td><?= htmlspecialchars($c->permis_expire_le ?? '') ?></td>
+<?php
+    $__pexp = trim((string)($c->permis_expire_le ?? ''));
+    $__badge = '';
+    if ($__pexp !== '') {
+        $ts = strtotime($__pexp);
+        if ($ts !== false) {
+            $__badge = ($ts < strtotime(date('Y-m-d'))) ? ' <span class="badge bg-danger ms-1">Permis expiré</span>' : '';
+        }
+    }
+?>
+                                                                        <td><span class="date-text"><?= htmlspecialchars($__pexp) ?></span><?= $__badge ?></td>
                                                                         <td class="text-center">
-                                                                            <button type="button" class="btn btn-sm btn-outline-primary btn-open-conducteur" data-bs-toggle="modal" data-bs-target="#modalConducteurDetails">Détails</button>
+                                                                            <div class="btn-group btn-group-sm" role="group">
+                                                                                <button type="button" class="btn btn-outline-primary btn-open-conducteur" data-bs-toggle="modal" data-bs-target="#modalConducteurDetails">Détails</button>
+                                                                                <?php if ($canEdit): ?>
+                                                                                <button type="button" class="btn btn-outline-success btn-assign-contrav" data-dossier-type="conducteur_vehicule" data-dossier-id="<?= htmlspecialchars($c->id ?? '', ENT_QUOTES) ?>" data-target-label="Conducteur: <?= htmlspecialchars($c->nom ?? '') ?>">Assigner</button>
+                                                                                <?php endif; ?>
+                                                                            </div>
                                                                         </td>
                                                                     </tr>
 <?php endforeach; ?>
@@ -146,6 +165,177 @@
                                                     </div>
                                                 </div>
 
+        <!-- Modal: Associer un véhicule -->
+        <div class="modal fade" id="associerVehiculeModal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title">Associer un véhicule au particulier</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+              </div>
+              <div class="modal-body">
+                <form id="associerVehiculeForm">
+                  <input type="hidden" name="particulier_id" id="av_particulier_id">
+                  <div class="mb-3">
+                    <label class="form-label">Plaque d'immatriculation</label>
+                    <div class="input-group">
+                      <input type="text" class="form-control" id="av_search_plate" placeholder="Ex: ABC1234" autocomplete="off">
+                      <button class="btn btn-outline-secondary" type="button" id="av_btn_search"><i class="ri-search-line"></i></button>
+                    </div>
+                    <div class="form-text">Saisissez la plaque puis cliquez sur rechercher.</div>
+                  </div>
+                  <div id="av_vehicle_result" class="border rounded p-2 d-none">
+                    <div class="small text-muted">Véhicule trouvé</div>
+                    <div class="fw-semibold" id="av_vehicle_title"></div>
+                    <div class="text-muted" id="av_vehicle_sub"></div>
+                    <input type="hidden" name="vehicule_plaque_id" id="av_vehicule_plaque_id">
+                  </div>
+                  <div id="av_no_result" class="alert alert-warning d-none mt-2">Aucun véhicule trouvé pour cette plaque.</div>
+                  <div class="mb-3 mt-3">
+                    <label class="form-label">Notes (optionnel)</label>
+                    <textarea name="notes" id="av_notes" class="form-control" rows="2" placeholder="Notes sur l'association"></textarea>
+                  </div>
+                </form>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" id="av_btn_submit">Associer</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <script>
+        (function(){
+          const actionsModal = document.getElementById('particulierActionsModal');
+          const assocModal = document.getElementById('associerVehiculeModal');
+          const inputPid = document.getElementById('av_particulier_id');
+          const inputPlate = document.getElementById('av_search_plate');
+          const btnSearch = document.getElementById('av_btn_search');
+          const resBox = document.getElementById('av_vehicle_result');
+          const noRes = document.getElementById('av_no_result');
+          const resTitle = document.getElementById('av_vehicle_title');
+          const resSub = document.getElementById('av_vehicle_sub');
+          const hiddenVid = document.getElementById('av_vehicule_plaque_id');
+          const btnSubmit = document.getElementById('av_btn_submit');
+
+          function ensurePid(){
+            const ctx = window.__lastParticulierCtx || (function(){
+              try { return JSON.parse(localStorage.getItem('recent_particulier_ctx')||'null'); } catch { return null; }
+            })();
+            if (ctx && ctx.id) { inputPid.value = ctx.id; }
+          }
+          function resetResult(){
+            hiddenVid.value = '';
+            resTitle.textContent = '';
+            resSub.textContent = '';
+            resBox.classList.add('d-none');
+            noRes.classList.add('d-none');
+          }
+          function openAssocModal(){
+            ensurePid();
+            resetResult();
+            inputPlate.value = '';
+            document.getElementById('av_notes').value = '';
+            try {
+              if (window.bootstrap && bootstrap.Modal) {
+                if (actionsModal) {
+                  try { bootstrap.Modal.getOrCreateInstance(actionsModal).hide(); } catch {}
+                }
+                // Ensure modal is a direct child of body to avoid clipping
+                if (assocModal && assocModal.parentNode !== document.body) {
+                  document.body.appendChild(assocModal);
+                }
+                bootstrap.Modal.getOrCreateInstance(assocModal).show();
+              }
+            } catch {}
+            // Fallback if Bootstrap JS absent
+            if (!window.bootstrap || !bootstrap.Modal) {
+              // Hide actions modal (fallback)
+              if (actionsModal) {
+                actionsModal.classList.remove('show');
+                actionsModal.style.display = 'none';
+                actionsModal.setAttribute('aria-hidden','true');
+              }
+              // Remove any existing backdrops
+              document.querySelectorAll('.modal-backdrop').forEach(el=> el.parentNode && el.parentNode.removeChild(el));
+              // Create backdrop
+              const bd = document.createElement('div');
+              bd.className = 'modal-backdrop fade show';
+              document.body.appendChild(bd);
+              // Show assoc modal
+              if (assocModal && assocModal.parentNode !== document.body) {
+                document.body.appendChild(assocModal);
+              }
+              assocModal.classList.add('show');
+              assocModal.style.display = 'block';
+              assocModal.removeAttribute('aria-hidden');
+              document.body.classList.add('modal-open');
+            }
+          }
+          // Event delegation: handle clicks on the dynamic button
+          document.addEventListener('click', function(e){
+            const btn = e.target && (e.target.id === 'pa_action_associer_btn' ? e.target : e.target.closest && e.target.closest('#pa_action_associer_btn'));
+            if (!btn) return;
+            // Prevent default only if we will handle show ourselves
+            if (!window.bootstrap || !bootstrap.Modal) e.preventDefault();
+            openAssocModal();
+          });
+          function renderVehicle(v){
+            const plaque = v.plaque || '';
+            const title = plaque ? ('Plaque: ' + plaque) : 'Véhicule';
+            const sub = [v.marque, v.modele, v.couleur, v.annee].filter(Boolean).join(' · ');
+            resTitle.textContent = title;
+            resSub.textContent = sub;
+          }
+          function doSearch(){
+            resetResult();
+            const q = (inputPlate.value || '').trim();
+            if (!q) return;
+            fetch(`/api/vehicules/search?plate=${encodeURIComponent(q)}`)
+              .then(r=>r.json())
+              .then(j=>{
+                if (!j.ok){ noRes.classList.remove('d-none'); return; }
+                const rows = j.data || [];
+                if (!rows.length){ noRes.classList.remove('d-none'); return; }
+                const v = rows[0];
+                hiddenVid.value = String(v.id || '');
+                renderVehicle(v);
+                resBox.classList.remove('d-none');
+              })
+              .catch(()=>{ noRes.classList.remove('d-none'); });
+          }
+          if (btnSearch){ btnSearch.addEventListener('click', doSearch); }
+          if (inputPlate){ inputPlate.addEventListener('keydown', function(e){ if (e.key==='Enter'){ e.preventDefault(); doSearch(); }}); }
+
+          function submitAssoc(){
+            ensurePid();
+            const pid = inputPid.value.trim();
+            const vid = hiddenVid.value.trim();
+            if (!pid){ alert("Contexte Particulier manquant. Veuillez réouvrir depuis la liste."); return; }
+            if (!vid){ alert("Veuillez rechercher et sélectionner un véhicule valide."); return; }
+            const fd = new FormData();
+            fd.append('particulier_id', pid);
+            fd.append('vehicule_plaque_id', vid);
+            const notes = document.getElementById('av_notes').value || '';
+            if (notes) fd.append('notes', notes);
+            btnSubmit.disabled = true;
+            fetch('/particulier/associer-vehicule', { method:'POST', body: fd })
+              .then(r=>r.json())
+              .then(j=>{
+                if (j && j.ok){
+                  alert(j.dup ? 'Cette association existe déjà.' : 'Véhicule associé avec succès.');
+                  try { if (window.bootstrap && bootstrap.Modal) bootstrap.Modal.getOrCreateInstance(assocModal).hide(); } catch {}
+                } else {
+                  alert('Erreur: ' + (j && j.error ? j.error : 'Echec'));
+                }
+              })
+              .catch(()=> alert('Erreur réseau'))
+              .finally(()=>{ btnSubmit.disabled = false; });
+          }
+          if (btnSubmit){ btnSubmit.addEventListener('click', submitAssoc); }
+        })();
+        </script>
                                                 <!-- Modal Details Conducteur -->
                                                 <div class="modal fade" id="modalConducteurDetails" tabindex="-1" aria-hidden="true">
                                                   <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -171,7 +361,7 @@
                                                               <div class="col-md-6"><strong>Date de naissance:</strong> <span id="dc_date_naissance"></span></div>
                                                               <div class="col-md-6"><strong>Adresse:</strong> <span id="dc_adresse"></span></div>
                                                               <div class="col-md-6"><strong>Permis valide le:</strong> <span id="dc_permis_valide_le"></span></div>
-                                                              <div class="col-md-6"><strong>Permis expire le:</strong> <span id="dc_permis_expire_le"></span></div>
+                                                              <div class="col-md-6"><strong>Permis expire le:</strong> <span id="dc_permis_expire_le"></span><span class="badge bg-danger ms-2 d-none" id="dc_permis_badge">Permis expiré</span></div>
                                                               <div class="col-md-4"><strong>Photo:</strong><br><img id="dc_photo" src="" alt="Photo" class="img-thumbnail" style="max-height:120px"></div>
                                                               <div class="col-md-4"><strong>Permis recto:</strong><br><img id="dc_permis_recto" src="" alt="Recto" class="img-thumbnail" style="max-height:120px"></div>
                                                               <div class="col-md-4"><strong>Permis verso:</strong><br><img id="dc_permis_verso" src="" alt="Verso" class="img-thumbnail" style="max-height:120px"></div>
@@ -194,7 +384,11 @@
                                                             rows.forEach(tr=>{
                                                                 colIndexes.forEach(idx=>{
                                                                     const td = tr.querySelector(`td:nth-child(${idx})`);
-                                                                    if (td) td.textContent = window.formatDMY(td.textContent);
+                                                                    if (td) {
+                                                                        const span = td.querySelector('.date-text');
+                                                                        if (span) span.textContent = window.formatDMY(span.textContent);
+                                                                        else td.textContent = window.formatDMY(td.textContent);
+                                                                    }
                                                                 });
                                                             });
                                                         }
@@ -233,8 +427,30 @@
                                                   </div>
                                                 </div>
 
-                                                <script>
+                                            <?php require_once __DIR__ . '/_partials/_modal_avis_recherche.php'; ?>
+
+                                            <script>
                                                     (function(){
+                                                        // Helpers fallback si Bootstrap.Modal n'est pas dispo
+                                                        function closeModalFallback(el){
+                                                            if (!el) return;
+                                                            el.classList.remove('show');
+                                                            el.style.display = 'none';
+                                                            // retirer backdrops existants
+                                                            document.querySelectorAll('.modal-backdrop').forEach(b=>b.parentNode&&b.parentNode.removeChild(b));
+                                                            document.body.classList.remove('modal-open');
+                                                            document.body.style.removeProperty('padding-right');
+                                                        }
+                                                        function openModalFallback(el){
+                                                            if (!el) return;
+                                                            // créer un backdrop
+                                                            const bd = document.createElement('div');
+                                                            bd.className = 'modal-backdrop fade show';
+                                                            document.body.appendChild(bd);
+                                                            el.style.display = 'block';
+                                                            el.classList.add('show');
+                                                            document.body.classList.add('modal-open');
+                                                        }
                                                         // Contraventions groupées par dossier (conducteur) depuis PHP
                                                         const CONTRAVS = <?php echo json_encode($contraventionsByDossier ?? [], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); ?>;
                                                         // Helper global: format date to DD-MM-YYYY (client-side only)
@@ -288,6 +504,19 @@
                                                             document.getElementById('dc_adresse').textContent = get('adresse');
                                                             document.getElementById('dc_permis_valide_le').textContent = window.formatDMY(get('permis_valide_le'));
                                                             document.getElementById('dc_permis_expire_le').textContent = window.formatDMY(get('permis_expire_le'));
+                                                            (function(){
+                                                                const raw = get('permis_expire_le');
+                                                                const badge = document.getElementById('dc_permis_badge');
+                                                                if (!badge) return;
+                                                                if (raw) {
+                                                                    const d = new Date(raw);
+                                                                    if (!isNaN(d.getTime())) {
+                                                                        const today = new Date(); today.setHours(0,0,0,0);
+                                                                        const d0 = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                                                                        if (d0 < today) badge.classList.remove('d-none'); else badge.classList.add('d-none');
+                                                                    } else { badge.classList.add('d-none'); }
+                                                                } else { badge.classList.add('d-none'); }
+                                                            })();
                                                             setImg('dc_photo', get('photo'));
                                                             setImg('dc_permis_recto', get('permis_recto'));
                                                             setImg('dc_permis_verso', get('permis_verso'));
@@ -313,7 +542,7 @@
                                                                     <td>
                                                                         <div class="d-flex align-items-center gap-2">
                                                                             <div class="form-check form-switch m-0">
-                                                                                <input class="form-check-input cv-payed-switch" type="checkbox" role="switch" data-cv-id="${cv.id}" ${checked}>
+                                                                                <input class="form-check-input cv-payed-switch" type="checkbox" role="switch" data-cv-id="${cv.id}" ${checked} ${window.CAN_EDIT ? '' : 'disabled'}>
                                                                             </div>
                                                                             <span class="badge bg-light text-dark cv-payed-label">${label}</span>
                                                                         </div>
@@ -393,6 +622,7 @@
                                                         document.addEventListener('change', async (e)=>{
                                                             const input = e.target.closest('.cv-payed-switch');
                                                             if (!input) return;
+                                                            if (!window.CAN_EDIT) { input.checked = !input.checked; alert('Action réservée au superadmin'); return; }
                                                             const id = input.getAttribute('data-cv-id');
                                                             const prevChecked = !input.checked; // état AVANT clic (change est déclenché après bascule)
                                                             const payed = input.checked ? '1' : '0';
@@ -458,22 +688,75 @@
                                                                         <th>Valide le</th>
                                                                         <th>Expire le</th>
                                                                         <th>Assurance</th>
-                                                                        <th style="width:90px;">Action</th>
+                                                                        <th style="width:140px;">Action</th>
                                                                     </tr>
                                                                 </thead>
                                                                 <tbody>
                                                                     <?php $idxv=1; if(!empty($vehicules)) { foreach($vehicules as $v): ?>
-                                                                        <tr data-veh-id="<?php echo htmlspecialchars($v['id']); ?>" data-veh-images="<?php echo htmlspecialchars($v['images'] ?? '[]', ENT_QUOTES, 'UTF-8'); ?>">
+                                                                        <?php
+                                                                            // Déterminer expiration assurance côté serveur pour styliser la ligne
+                                                                            $__expAssu = (string)($v['date_expire_assurance'] ?? '');
+                                                                            $__isExpiredRow = false;
+                                                                            if ($__expAssu !== '') {
+                                                                                $ts = strtotime($__expAssu);
+                                                                                if ($ts !== false) {
+                                                                                    $__isExpiredRow = ($ts < strtotime(date('Y-m-d')));
+                                                                                }
+                                                                            }
+                                                                        ?>
+                                                                        <tr data-veh-id="<?php echo htmlspecialchars($v['id']); ?>" data-assu-exp="<?php echo htmlspecialchars($v['date_expire_assurance'] ?? ''); ?>" data-plaque-exp="<?php echo htmlspecialchars($v['plaque_expire_le'] ?? ''); ?>" data-veh-images="<?php echo htmlspecialchars($v['images'] ?? '[]', ENT_QUOTES, 'UTF-8'); ?>" data-frontiere-entree="<?php echo htmlspecialchars($v['frontiere_entree'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-date-importation="<?php echo htmlspecialchars($v['date_importation'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                                                             <td><?php echo $idxv++; ?></td>
                                                                             <td class="veh2-marque"><?php echo htmlspecialchars($v['marque'] ?? ''); ?></td>
                                                                             <td class="veh2-annee"><?php echo htmlspecialchars($v['annee'] ?? ''); ?></td>
                                                                             <td class="veh2-couleur"><?php echo htmlspecialchars($v['couleur'] ?? ''); ?></td>
                                                                             <td class="veh2-plaque"><?php echo htmlspecialchars($v['plaque'] ?? ''); ?></td>
-                                                                            <td class="veh2-valide"><?php echo htmlspecialchars($v['plaque_valide_le'] ?? ''); ?></td>
-                                                                            <td class="veh2-expire"><?php echo htmlspecialchars($v['plaque_expire_le'] ?? ''); ?></td>
-                                                                            <td class="veh2-assu"><?php echo htmlspecialchars(($v['nume_assurance'] ?? '').' '.($v['societe_assurance'] ?? '')); ?></td>
+                                                                            <td class="veh2-valide"><?php
+                                                                                $valPlaque = trim((string)($v['plaque_valide_le'] ?? ''));
+                                                                                echo $valPlaque !== '' ? htmlspecialchars($valPlaque) : 'N/A';
+                                                                            ?></td>
+                                                                            <td class="veh2-expire">
+                                                                                <?php
+                                                                                    $expPlaque = trim((string)($v['plaque_expire_le'] ?? ''));
+                                                                                    echo $expPlaque !== '' ? htmlspecialchars($expPlaque) : 'N/A';
+                                                                                    $isExpiredPlaque = false;
+                                                                                    if ($expPlaque !== '') {
+                                                                                        $tsExpP = strtotime($expPlaque);
+                                                                                        if ($tsExpP !== false) {
+                                                                                            $today = strtotime(date('Y-m-d'));
+                                                                                            $isExpiredPlaque = ($tsExpP < $today);
+                                                                                        }
+                                                                                    }
+                                                                                    if ($isExpiredPlaque) {
+                                                                                        echo ' <span class="badge bg-danger ms-2">Plaque expirée</span>';
+                                                                                    }
+                                                                                ?>
+                                                                            </td>
+                                                                            <td class="veh2-assu">
+                                                                                <?php
+                                                                                    $assuText = trim((string)($v['nume_assurance'] ?? '') . ' ' . (string)($v['societe_assurance'] ?? ''));
+                                                                                    $expAssu = (string)($v['date_expire_assurance'] ?? '');
+                                                                                    $isExpiredAssu = false;
+                                                                                    if ($expAssu !== '') {
+                                                                                        $tsExp = strtotime($expAssu);
+                                                                                        if ($tsExp !== false) {
+                                                                                            // Comparer à aujourd'hui en ignorant l'heure
+                                                                                            $today = strtotime(date('Y-m-d'));
+                                                                                            $isExpiredAssu = ($tsExp < $today);
+                                                                                        }
+                                                                                    }
+                                                                                    echo $assuText !== '' ? htmlspecialchars($assuText) : 'N/A';
+                                                                                    if ($isExpiredAssu) {
+                                                                                        echo ' <span class="badge bg-danger ms-2">Assurance expirée</span>';
+                                                                                    }
+                                                                                ?>
+                                                                            </td>
                                                                             <td>
-                                                                                <button type="button" class="btn btn-sm btn-outline-primary btn-veh2-details" data-bs-toggle="modal" data-bs-target="#vehiculeDetailsModal2">Détails</button>
+                                                                                <div class="btn-group btn-group-sm" role="group">
+                                                                                    <button type="button" class="btn btn-outline-primary btn-veh2-details" data-bs-toggle="modal" data-bs-target="#vehiculeDetailsModal2">Détails</button>
+                                                                                    <?php if ($canEdit): ?>
+                                                                                    <button type="button" class="btn btn-outline-success btn-assign-contrav" data-dossier-type="vehicule_plaque" data-dossier-id="<?php echo htmlspecialchars($v['id']); ?>" data-target-label="Véhicule: <?php echo htmlspecialchars(($v['marque'] ?? '').' '.($v['plaque'] ?? '')); ?>">Assigner</button>
+                                                                                    <?php endif; ?>
+                                                                                </div>
                                                                             </td>
                                                                         </tr>
                                                                     <?php endforeach; } ?>
@@ -509,6 +792,8 @@
                                                                             <div class="col-md-4"><strong>Plaque:</strong> <span id="md2-plaque"></span></div>
                                                                             <div class="col-md-4"><strong>Valide le:</strong> <span id="md2-valide"></span></div>
                                                                             <div class="col-md-4"><strong>Expire le:</strong> <span id="md2-expire"></span></div>
+                                                                            <div class="col-md-6"><strong>Frontière d'entrée:</strong> <span id="md2-frontiere"></span></div>
+                                                                            <div class="col-md-6"><strong>Date d'importation:</strong> <span id="md2-date-import"></span></div>
                                                                             <div class="col-12"><strong>Assurance:</strong> <span id="md2-assu"></span></div>
                                                                         </div>
                                                                         <hr/>
@@ -632,7 +917,45 @@
                                                         document.getElementById('md2-plaque').textContent = tr.querySelector('.veh2-plaque')?.textContent || '';
                                                         document.getElementById('md2-valide').textContent = window.formatDMY(tr.querySelector('.veh2-valide')?.textContent || '');
                                                         document.getElementById('md2-expire').textContent = window.formatDMY(tr.querySelector('.veh2-expire')?.textContent || '');
-                                                        document.getElementById('md2-assu').textContent = tr.querySelector('.veh2-assu')?.textContent || '';
+                                                        // Champs importation
+                                                        document.getElementById('md2-frontiere').textContent = tr.getAttribute('data-frontiere-entree') || '';
+                                                        document.getElementById('md2-date-import').textContent = window.formatDMY(tr.getAttribute('data-date-importation') || '');
+                                                        // Badge plaque expirée si date dépassée
+                                                        (function(){
+                                                            const target = document.getElementById('md2-expire');
+                                                            const expPlaque = tr.getAttribute('data-plaque-exp') || '';
+                                                            if (expPlaque && target) {
+                                                                const d = new Date(expPlaque);
+                                                                if (!isNaN(d.getTime())) {
+                                                                    const today = new Date(); today.setHours(0,0,0,0);
+                                                                    const d0 = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                                                                    if (d0 < today) {
+                                                                        const badge = document.createElement('span');
+                                                                        badge.className = 'badge bg-danger ms-2';
+                                                                        badge.textContent = 'Plaque expirée';
+                                                                        target.appendChild(badge);
+                                                                    }
+                                                                }
+                                                            }
+                                                        })();
+                                                        const assuEl = document.getElementById('md2-assu');
+                                                        const assuText = tr.querySelector('.veh2-assu')?.textContent || '';
+                                                        assuEl.textContent = assuText;
+                                                        // Badge assurance expirée si date dépassée
+                                                        const expAssu = tr.getAttribute('data-assu-exp') || '';
+                                                        if (expAssu) {
+                                                            const d = new Date(expAssu);
+                                                            if (!isNaN(d.getTime())) {
+                                                                const today = new Date(); today.setHours(0,0,0,0);
+                                                                const d0 = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                                                                if (d0 < today) {
+                                                                    const badge = document.createElement('span');
+                                                                    badge.className = 'badge bg-danger ms-2';
+                                                                    badge.textContent = 'Assurance expirée';
+                                                                    assuEl.appendChild(badge);
+                                                                }
+                                                            }
+                                                        }
 
                                                         // Images
                                                         const imgsContainer = document.getElementById('md2-images');
@@ -672,7 +995,7 @@
                                                                 <td>
                                                                     <div class="d-flex align-items-center gap-2">
                                                                         <div class="form-check form-switch m-0">
-                                                                            <input class="form-check-input veh2-cv-payed" type="checkbox" data-cv-id="${cv.id}" ${isPaid?'checked':''}>
+                                                                            <input class="form-check-input veh2-cv-payed" type="checkbox" data-cv-id="${cv.id}" ${isPaid?'checked':''} ${window.CAN_EDIT ? '' : 'disabled'}>
                                                                         </div>
                                                                         <span class="badge bg-light text-dark veh2-cv-label">${isPaid?'Payé':'Non payé'}</span>
                                                                     </div>
@@ -684,6 +1007,7 @@
                                                     // Update Payé via AJAX
                                                     document.addEventListener('change', async (e)=>{
                                                         const input = e.target.closest('.veh2-cv-payed'); if (!input) return;
+                                                        if (!window.CAN_EDIT) { input.checked = !input.checked; alert('Action réservée au superadmin'); return; }
                                                         const id = input.getAttribute('data-cv-id');
                                                         const prevChecked = !input.checked; // état avant clic
                                                         const payed = input.checked ? '1':'0';
@@ -769,7 +1093,10 @@
                                                                             <td class="p-gsm"><?php echo htmlspecialchars($p['gsm'] ?? ''); ?></td>
                                                                             <td class="p-email"><?php echo htmlspecialchars($p['email'] ?? ''); ?></td>
                                                                             <td>
-                                                                                <button type="button" class="btn btn-sm btn-outline-primary btn-part-details" data-bs-toggle="modal" data-bs-target="#particulierDetailsModal">Détails</button>
+                                                                                <div class="btn-group btn-group-sm" role="group">
+                                                                                    <button type="button" class="btn btn-outline-primary btn-part-details" data-bs-toggle="modal" data-bs-target="#particulierDetailsModal">Détails</button>
+                                                                                    <button type="button" class="btn btn-outline-secondary btn-part-actions" data-bs-toggle="modal" data-bs-target="#particulierActionsModal" title="Plus d'actions">Plus</button>
+                                                                                </div>
                                                                             </td>
                                                                         </tr>
                                                                     <?php endforeach; } ?>
@@ -857,6 +1184,47 @@
                                                                                 <div class="text-muted small">Observations</div>
                                                                                 <div class="fw-medium" id="pt_observations"></div>
                                                                             </div>
+                                                                            <div class="col-12">
+                                                                                <div id="pt_avis_banner" class="alert alert-warning d-none d-flex align-items-center justify-content-between" role="alert">
+                                                                                    <div>
+                                                                                        <i class="ri-megaphone-line me-2"></i>
+                                                                                        <strong>Avis de recherche actif</strong>
+                                                                                        <span class="ms-2" id="pt_avis_text"></span>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <button type="button" class="btn btn-sm btn-outline-dark" id="pt_btn_close_avis" data-avis-id="">Clore l'avis</button>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div class="col-12 d-flex justify-content-end">
+                                                                                <button type="button" class="btn btn-sm btn-outline-danger" id="pt_btn_launch_avis">
+                                                                                    <i class="ri-megaphone-line me-1"></i> Lancer un avis de recherche
+                                                                                </button>
+                                                                            </div>
+                                                                            <div class="col-12"><hr class="my-3"></div>
+                                                                            <div class="col-12">
+                                                                                <div class="d-flex align-items-center justify-content-between mb-2">
+                                                                                    <h6 class="mb-0"><i class="ri-car-line me-2 text-info"></i>Véhicules associés</h6>
+                                                                                    <span class="badge bg-secondary" id="pt_veh_count">0</span>
+                                                                                </div>
+                                                                                <div class="table-responsive">
+                                                                                    <table class="table table-sm table-hover mb-0">
+                                                                                        <thead class="table-light">
+                                                                                            <tr>
+                                                                                                <th style="width:60px;">#</th>
+                                                                                                <th>Plaque</th>
+                                                                                                <th>Marque/Modèle</th>
+                                                                                                <th>Couleur</th>
+                                                                                                <th>Année</th>
+                                                                                                <th>Depuis</th>
+                                                                                            </tr>
+                                                                                        </thead>
+                                                                                        <tbody id="pt_veh_tbody">
+                                                                                            <tr><td colspan="6" class="text-center text-muted">Aucun véhicule</td></tr>
+                                                                                        </tbody>
+                                                                                    </table>
+                                                                                </div>
+                                                                            </div>
                                                                         </div>
                                                                     </div>
                                                                     <div class="tab-pane fade" id="pt-cv" role="tabpanel" aria-labelledby="pt-cv-tab">
@@ -931,9 +1299,7 @@
                                                         rows.forEach(r=> tbody.appendChild(r)); renumber();
                                                     }
                                                     // Détails modal
-                                                    document.addEventListener('click', (e)=>{
-                                                        const btn = e.target.closest('.btn-part-details'); if (!btn) return;
-                                                        const tr = btn.closest('tr'); if (!tr) return;
+                                                    function fillParticulierModalFromRow(tr){
                                                         const get = (k)=> tr.getAttribute('data-'+k) || '';
                                                         const pid = tr.getAttribute('data-id') || '';
                                                         const pnumero = get('numero_national');
@@ -950,9 +1316,18 @@
                                                         document.getElementById('pt_nationalite').textContent = get('nationalite');
                                                         document.getElementById('pt_lieu_naissance').textContent = get('lieu_naissance');
                                                         document.getElementById('pt_observations').textContent = get('observations');
-                                                        // Charger contraventions
                                                         const tbodyCv = document.getElementById('pt_cv_tbody');
                                                         if (tbodyCv) { tbodyCv.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Chargement...</td></tr>'; }
+                                                        const vehTbody = document.getElementById('pt_veh_tbody');
+                                                        const vehCount = document.getElementById('pt_veh_count');
+                                                        if (vehTbody) { vehTbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Chargement...</td></tr>'; }
+                                                        if (vehCount) { vehCount.textContent = '0'; }
+                                                        const avisBanner = document.getElementById('pt_avis_banner');
+                                                        const avisText = document.getElementById('pt_avis_text');
+                                                        const btnCloseAvis = document.getElementById('pt_btn_close_avis');
+                                                        if (avisBanner) avisBanner.classList.add('d-none');
+                                                        if (avisText) avisText.textContent = '';
+                                                        if (btnCloseAvis) btnCloseAvis.setAttribute('data-avis-id','');
                                                         if (pid) {
                                                             const url = `/particulier/${pid}/contraventions` + (pnumero ? `?numero=${encodeURIComponent(pnumero)}` : '');
                                                             fetch(url).then(r=>r.json()).then(json=>{
@@ -961,35 +1336,277 @@
                                                                 const rows = json.data || [];
                                                                 if (rows.length === 0) { tbodyCv.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Aucune contravention</td></tr>'; return; }
                                                                 tbodyCv.innerHTML = '';
-                                                                let i=1;
-                                                                rows.forEach(cv=>{
-                                                                    const trcv = document.createElement('tr');
-            
-                                                                    const isPaid = (cv.payed===1||cv.payed==='1'||cv.payed===true ||cv.payed==="Payé");
-                                                                    const checked = isPaid ? 'checked' : '';
-                                                                    const label = isPaid ? 'Payé' : 'Non payé';
-                                                                    trcv.innerHTML = `
-                                                                        <td>${i++}</td>
-                                                                        <td>${cv.reference_loi ?? ''}</td>
-                                                                        <td>${window.formatDMY(cv.date_infraction ?? cv.created_at ?? '')}</td>
-                                                                        <td>${cv.description ?? ''}</td>
-                                                                        <td>${window.formatMoneyCDF(cv.amende)}</td>
+                                                                rows.forEach((cv, idx)=>{
+                                                                    const trEl = document.createElement('tr');
+                                                                    const payed = String((cv.payed ?? cv.paye ?? cv.paid ?? '0')) === '1';
+                                                                    const ref = cv.reference ?? cv.reference_loi ?? cv.ref ?? '';
+                                                                    const rawDate = cv.date ?? cv.date_infraction ?? cv.dateInfraction ?? cv.date_contravention ?? '';
+                                                                    const dateDisp = window.formatDMY ? (window.formatDMY(rawDate) || '') : (rawDate || '');
+                                                                    const desc = cv.description ?? cv.type_infraction ?? cv.typeInfraction ?? '';
+                                                                    const montant = (cv.montant ?? cv.amende ?? cv.amount ?? 0);
+                                                                    const cid = (cv.id ?? cv.contravention_id ?? cv.id_contravention ?? cv.idContravention ?? '');
+                                                                    trEl.innerHTML = `
+                                                                        <td>${idx+1}</td>
+                                                                        <td>${ref}</td>
+                                                                        <td>${dateDisp}</td>
+                                                                        <td>${desc}</td>
+                                                                        <td>${window.formatMoneyCDF ? (window.formatMoneyCDF(montant) || '') : montant}</td>
                                                                         <td>
-                                                                            <div class="d-flex align-items-center gap-2">
-                                                                                <div class="form-check form-switch m-0">
-                                                                                    <input class="form-check-input pt-cv-payed" type="checkbox" role="switch" data-cv-id="${cv.id}" ${checked}>
-                                                                                </div>
-                                                                                <span class="badge bg-light text-dark pt-cv-payed-label">${label}</span>
-                                                                            </div>
+                                                                          <div class="form-check form-switch m-0">
+                                                                            <input class="form-check-input pt-cv-payed" type="checkbox" data-cv-id="${cid}" ${payed ? 'checked' : ''}>
+                                                                            <span class="ms-2 pt-cv-payed-label">${payed ? 'Payé' : 'Non payé'}</span>
+                                                                          </div>
                                                                         </td>
                                                                     `;
-                                                                    tbodyCv.appendChild(trcv);
+                                                                    tbodyCv.appendChild(trEl);
                                                                 });
                                                             }).catch(()=>{
                                                                 if (tbodyCv) tbodyCv.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erreur réseau</td></tr>';
                                                             });
+
+                                                            // Charger véhicules associés
+                                                            fetch(`/particulier/${pid}/vehicules`).then(r=>r.json()).then(json=>{
+                                                                if (!vehTbody) return;
+                                                                if (!json.ok) { vehTbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erreur de chargement</td></tr>'; return; }
+                                                                const rows = json.data || [];
+                                                                if (vehCount) vehCount.textContent = String(rows.length);
+                                                                if (rows.length === 0) { vehTbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Aucun véhicule</td></tr>'; return; }
+                                                                vehTbody.innerHTML = '';
+                                                                rows.forEach((v, idx)=>{
+                                                                    const trEl = document.createElement('tr');
+                                                                    const plaque = v.plaque || '';
+                                                                    const mm = [v.marque, v.modele].filter(Boolean).join(' ');
+                                                                    const coul = v.couleur || '';
+                                                                    const an = v.annee || '';
+                                                                    const date = v.date_assoc || '';
+                                                                    const dateDisp = window.formatDMY ? (window.formatDMY(date) || '') : (date || '');
+                                                                    trEl.innerHTML = `
+                                                                        <td>${idx+1}</td>
+                                                                        <td>${plaque}</td>
+                                                                        <td>${mm}</td>
+                                                                        <td>${coul}</td>
+                                                                        <td>${an}</td>
+                                                                        <td>${dateDisp}</td>
+                                                                    `;
+                                                                    vehTbody.appendChild(trEl);
+                                                                });
+                                                            }).catch(()=>{
+                                                                if (vehTbody) vehTbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erreur réseau</td></tr>';
+                                                            });
+
+                                                            // Charger avis de recherche pour ce particulier
+                                                            fetch(`/particulier/${pid}/avis`).then(r=>r.json()).then(json=>{
+                                                                if (!json || !json.ok) return;
+                                                                const list = Array.isArray(json.data) ? json.data : [];
+                                                                const active = list.find(a=> (a.statut||'') === 'actif');
+                                                                if (active && avisBanner) {
+                                                                    const motif = active.motif || '';
+                                                                    const niveau = active.niveau || '';
+                                                                    if (avisText) avisText.textContent = `${motif} — niveau: ${niveau}`;
+                                                                    if (btnCloseAvis) btnCloseAvis.setAttribute('data-avis-id', String(active.id||''));
+                                                                    avisBanner.classList.remove('d-none');
+                                                                }
+                                                            }).catch(()=>{});
                                                         } else {
                                                             if (tbodyCv) tbodyCv.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Aucune contravention</td></tr>';
+                                                            if (vehTbody) vehTbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Aucun véhicule</td></tr>';
+                                                        }
+                                                    }
+                                                    // Ouvrir le modal de création d'avis (depuis différents boutons)
+                                                    document.addEventListener('click', (e)=>{
+                                                        const btn = e.target.closest('#pt_btn_launch_avis, .btn-launch-avis, [data-action="launch-avis"]'); if (!btn) return;
+                                                        // Empêcher le Data API Bootstrap d'interférer
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        // Eviter conflit aria-hidden: retirer le focus avant de cacher le modal courant
+                                                        try { if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur(); } catch(_){}
+                                                        try { if (btn && typeof btn.blur === 'function') btn.blur(); } catch(_){}
+                                                        const launchEl = document.getElementById('launchAvisModal');
+                                                        if (!launchEl) return;
+                                                        // S'assurer que le modal d'avis est au niveau body (pas imbriqué dans un autre modal)
+                                                        try {
+                                                            if (launchEl.parentElement && launchEl.parentElement.closest && launchEl.parentElement.closest('.modal')) {
+                                                                document.body.appendChild(launchEl);
+                                                            }
+                                                        } catch(_){}
+                                                        const pid = document.querySelector('#particulierDetailsModal [data-id]')?.getAttribute('data-id')
+                                                            || document.querySelector('tr[data-id].selected')?.getAttribute('data-id')
+                                                            || document.querySelector('tr[data-id]')?.getAttribute('data-id')
+                                                            || '';
+                                                        launchEl.setAttribute('data-pid', pid);
+                                                        // Trouver le modal courant (celui qui contient le bouton cliqué)
+                                                        const currentModalEl = btn.closest('.modal');
+                                                        let currentModalInst = null;
+                                                        if (currentModalEl && currentModalEl.classList.contains('show')) {
+                                                            // Après fermeture du modal courant, ouvrir le modal d'avis
+                                                            const onCurrentHidden = function(){
+                                                                currentModalEl.removeEventListener('hidden.bs.modal', onCurrentHidden);
+                                                                // Déférer à la prochaine frame pour éviter tout focus dans un aria-hidden
+                                                                requestAnimationFrame(()=>{
+                                                                    // Nettoyer d'éventuels backdrops résiduels et préparer l'affichage
+                                                                    try { document.querySelectorAll('.modal-backdrop').forEach(el=>el.remove()); } catch(_){}
+                                                                    try { document.body.classList.add('modal-open'); } catch(_){}
+                                                                    try { launchEl.style.zIndex = '1060'; } catch(_){}
+                                                                    try {
+                                                                        if (window.jQuery && $.fn && $.fn.modal) {
+                                                                            $('#launchAvisModal').modal('show');
+                                                                        } else {
+                                                                            const m = (window.bootstrap && bootstrap.Modal && (bootstrap.Modal.getInstance ? bootstrap.Modal.getInstance(launchEl) : null)) || (window.bootstrap && bootstrap.Modal ? new bootstrap.Modal(launchEl) : null);
+                                                                            if (m && m.show) m.show(); else openModalFallback(launchEl);
+                                                                        }
+                                                                        // Forcer visibilité si nécessaire
+                                                                        try { launchEl.style.display = 'block'; } catch(_){}
+                                                                        try { launchEl.classList.add('show'); } catch(_){}
+                                                                        try { launchEl.setAttribute('aria-hidden','false'); launchEl.setAttribute('aria-modal','true'); launchEl.setAttribute('role','dialog'); } catch(_){}
+                                                                        try {
+                                                                            if (!document.querySelector('.modal-backdrop')) {
+                                                                                const bd = document.createElement('div');
+                                                                                bd.className = 'modal-backdrop fade show';
+                                                                                bd.style.zIndex = '1050';
+                                                                                document.body.appendChild(bd);
+                                                                            }
+                                                                        } catch(_){}
+                                                                    } catch(_) { openModalFallback(launchEl); }
+                                                                    // Forcer le focus après affichage
+                                                                    setTimeout(()=>{ try { launchEl.focus({preventScroll:true}); } catch(_){} }, 50);
+                                                                });
+                                                            };
+                                                            currentModalEl.addEventListener('hidden.bs.modal', onCurrentHidden);
+                                                            try {
+                                                                currentModalInst = (bootstrap.Modal.getInstance ? bootstrap.Modal.getInstance(currentModalEl) : null) || new bootstrap.Modal(currentModalEl);
+                                                                currentModalInst.hide();
+                                                            } catch(_) {
+                                                                closeModalFallback(currentModalEl);
+                                                                onCurrentHidden();
+                                                            }
+                                                            // Restaurer le modal courant après fermeture du modal d'avis
+                                                            const onLaunchHidden = function(){
+                                                                launchEl.removeEventListener('hidden.bs.modal', onLaunchHidden);
+                                                                try {
+                                                                    if (window.jQuery && $.fn && $.fn.modal) {
+                                                                        $(currentModalEl).modal('show');
+                                                                    } else {
+                                                                        const inst = (window.bootstrap && bootstrap.Modal && (bootstrap.Modal.getInstance ? bootstrap.Modal.getInstance(currentModalEl) : null)) || (window.bootstrap && bootstrap.Modal ? new bootstrap.Modal(currentModalEl) : null);
+                                                                        if (inst && inst.show) inst.show(); else openModalFallback(currentModalEl);
+                                                                    }
+                                                                } catch(_) { openModalFallback(currentModalEl); }
+                                                            };
+                                                            launchEl.addEventListener('hidden.bs.modal', onLaunchHidden);
+                                                        } else {
+                                                            // Aucun modal ouvert: ouvrir directement
+                                                            try {
+                                                                // Nettoyer backdrops résiduels
+                                                                try { document.querySelectorAll('.modal-backdrop').forEach(el=>el.remove()); } catch(_){}
+                                                                try { document.body.classList.add('modal-open'); } catch(_){}
+                                                                try { launchEl.style.zIndex = '1060'; } catch(_){}
+                                                                if (window.jQuery && $.fn && $.fn.modal) {
+                                                                    $('#launchAvisModal').modal('show');
+                                                                } else {
+                                                                    const m = (window.bootstrap && bootstrap.Modal && (bootstrap.Modal.getInstance ? bootstrap.Modal.getInstance(launchEl) : null)) || (window.bootstrap && bootstrap.Modal ? new bootstrap.Modal(launchEl) : null);
+                                                                    if (m && m.show) m.show(); else openModalFallback(launchEl);
+                                                                }
+                                                                // Forcer visibilité si nécessaire
+                                                                try { launchEl.style.display = 'block'; } catch(_){}
+                                                                try { launchEl.classList.add('show'); } catch(_){}
+                                                                try { launchEl.setAttribute('aria-hidden','false'); launchEl.setAttribute('aria-modal','true'); launchEl.setAttribute('role','dialog'); } catch(_){}
+                                                                try {
+                                                                    if (!document.querySelector('.modal-backdrop')) {
+                                                                        const bd = document.createElement('div');
+                                                                        bd.className = 'modal-backdrop fade show';
+                                                                        bd.style.zIndex = '1050';
+                                                                        document.body.appendChild(bd);
+                                                                    }
+                                                                } catch(_){}
+                                                                setTimeout(()=>{ try { launchEl.focus({preventScroll:true}); } catch(_){} }, 50);
+                                                            } catch(_) { openModalFallback(launchEl); }
+                                                        }
+                                                    });
+                                                    // Soumission création d'avis
+                                                    document.addEventListener('submit', async (e)=>{
+                                                        const form = e.target.closest('#launchAvisForm'); if (!form) return;
+                                                        e.preventDefault();
+                                                        const modalEl = document.getElementById('launchAvisModal');
+                                                        const pid = modalEl?.getAttribute('data-pid') || '';
+                                                        const fd = new FormData(form);
+                                                        const motif = (fd.get('motif')||'').toString().trim();
+                                                        const niveau = (fd.get('niveau')||'moyen').toString();
+                                                        if (!pid || !motif) { alert('Veuillez renseigner le motif'); return; }
+                                                        try {
+                                                            const resp = await fetch('/avis-recherche', {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                                                                body: new URLSearchParams({ cible_type: 'particulier', cible_id: pid, motif, niveau }).toString()
+                                                            });
+                                                            const data = await resp.json();
+                                                            if (!resp.ok || !data.ok) throw new Error(data.error||'Erreur serveur');
+                                                            // Close modal
+                                                            try { bootstrap.Modal.getInstance(modalEl)?.hide(); } catch(_) { modalEl.classList.remove('show'); modalEl.style.display='none'; }
+                                                            // Refresh banner
+                                                            const tr = document.querySelector(`tr[data-id="${pid}"]`);
+                                                            if (tr) fillParticulierModalFromRow(tr);
+                                                        } catch(err){ alert(err.message||'Erreur réseau'); }
+                                                    });
+                                                    // Clore avis
+                                                    document.addEventListener('click', async (e)=>{
+                                                        const btn = e.target.closest('#pt_btn_close_avis'); if (!btn) return;
+                                                        const id = btn.getAttribute('data-avis-id')||''; if (!id) return;
+                                                        if (!confirm('Confirmer la clôture de cet avis ?')) return;
+                                                        try {
+                                                            const resp = await fetch(`/avis-recherche/${id}/close`, { method: 'POST' });
+                                                            const data = await resp.json();
+                                                            if (!resp.ok || !data.ok) throw new Error(data.error||'Erreur serveur');
+                                                            // Masquer la bannière et recharger
+                                                            const banner = document.getElementById('pt_avis_banner');
+                                                            if (banner) banner.classList.add('d-none');
+                                                        } catch(err){ alert(err.message||'Erreur réseau'); }
+                                                    });
+                                                    // Click handler: Détails
+                                                    document.addEventListener('click', (e)=>{
+                                                        const btnDetails = e.target.closest('.btn-part-details'); if (!btnDetails) return;
+                                                        const tr = btnDetails.closest('tr'); if (!tr) return;
+                                                        fillParticulierModalFromRow(tr);
+                                                        // Assurer l'onglet Infos actif
+                                                        setTimeout(()=>{
+                                                            const tabBtn = document.getElementById('pt-infos-tab');
+                                                            if (tabBtn) {
+                                                                try {
+                                                                    if (window.bootstrap && bootstrap.Tab) {
+                                                                        bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+                                                                    } else { tabBtn.click(); }
+                                                                } catch { tabBtn.click(); }
+                                                            }
+                                                        }, 120);
+                                                    });
+                                                    // Click handler: Plus (ouvre modal indépendante)
+                                                    function fillParticulierActionsModalFromRow(tr){
+                                                        const get = (k)=> tr.getAttribute('data-'+k) || '';
+                                                        const id = get('id');
+                                                        const nom = get('nom');
+                                                        const numero = get('numero_national');
+                                                        const elNom = document.getElementById('pa_nom'); if (elNom) elNom.textContent = nom;
+                                                        const elNum = document.getElementById('pa_numero'); if (elNum) elNum.textContent = numero ? `(N° ${numero})` : '';
+                                                        // Persist context for later actions
+                                                        window.__lastParticulierCtx = { id, nom, numero };
+                                                        const modalEl = document.getElementById('particulierActionsModal');
+                                                        if (modalEl) modalEl.setAttribute('data-dossier-id', id);
+                                                        try { localStorage.setItem('recent_particulier_ctx', JSON.stringify({id, nom, numero})); } catch {}
+                                                    }
+                                                    document.addEventListener('click', (e)=>{
+                                                        const btnActions = e.target.closest('.btn-part-actions'); if (!btnActions) return;
+                                                        const tr = btnActions.closest('tr'); if (!tr) return;
+                                                        fillParticulierActionsModalFromRow(tr);
+                                                        // Open the modal programmatically to avoid issues with data attributes
+                                                        const modalEl = document.getElementById('particulierActionsModal');
+                                                        if (modalEl) {
+                                                            try {
+                                                                if (window.bootstrap && bootstrap.Modal) {
+                                                                    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                                                                } else {
+                                                                    // Fallback: trigger click on a hidden opener if needed
+                                                                    modalEl.classList.add('show');
+                                                                    modalEl.style.display = 'block';
+                                                                }
+                                                            } catch {}
                                                         }
                                                     });
                                                     filterInput?.addEventListener('input', ()=>{ applyFilter(); applySort(); });
@@ -1054,7 +1671,12 @@
                                                                             <td class="e-gsm"><?php echo htmlspecialchars($e['gsm'] ?? ''); ?></td>
                                                                             <td class="e-email"><?php echo htmlspecialchars($e['email'] ?? ''); ?></td>
                                                                             <td>
-                                                                                <button type="button" class="btn btn-sm btn-outline-primary btn-ent-details" data-bs-toggle="modal" data-bs-target="#entrepriseDetailsModal">Détails</button>
+                                                                                <div class="btn-group btn-group-sm" role="group">
+                                                                                    <button type="button" class="btn btn-outline-primary btn-ent-details" data-bs-toggle="modal" data-bs-target="#entrepriseDetailsModal">Détails</button>
+                                                                                    <?php if ($canEdit): ?>
+                                                                                    <button type="button" class="btn btn-outline-success btn-assign-contrav" data-dossier-type="entreprises" data-dossier-id="<?php echo htmlspecialchars($e['id'] ?? '', ENT_QUOTES); ?>" data-target-label="Entreprise: <?php echo htmlspecialchars($e['designation'] ?? ''); ?>">Assigner</button>
+                                                                                    <?php endif; ?>
+                                                                                </div>
                                                                             </td>
                                                                         </tr>
                                                                     <?php endforeach; } ?>
@@ -1194,7 +1816,7 @@
                                                                     <td>
                                                                         <div class="d-flex align-items-center gap-2">
                                                                             <div class="form-check form-switch m-0">
-                                                                                <input class="form-check-input ent-cv-payed" type="checkbox" role="switch" data-cv-id="${cv.id}" ${checked}>
+                                                                                <input class="form-check-input ent-cv-payed" type="checkbox" role="switch" data-cv-id="${cv.id}" ${checked} ${window.CAN_EDIT ? '' : 'disabled'}>
                                                                             </div>
                                                                             <span class="badge bg-light text-dark ent-cv-payed-label">${label}</span>
                                                                         </div>
@@ -1206,6 +1828,7 @@
                                                     // Switch payé handler (réutilise l'API existante)
                                                     document.addEventListener('change', async (e)=>{
                                                         const input = e.target.closest('.ent-cv-payed'); if (!input) return;
+                                                        if (!window.CAN_EDIT) { input.checked = !input.checked; alert('Action réservée au superadmin'); return; }
                                                         const id = input.getAttribute('data-cv-id'); const prevChecked = !input.checked; const payed = input.checked ? '1' : '0';
                                                         const labelEl = input.closest('td')?.querySelector('.ent-cv-payed-label'); input.disabled = true;
                                                         try {
@@ -1223,129 +1846,8 @@
                                                 })();
                                                 </script>
 
-                                                <!-- comment box -->
-                                                <div class="border rounded mt-2 mb-3">
-                                                    <form action="#" class="comment-area-box">
-                                                        <textarea rows="3" class="form-control border-0 resize-none" placeholder="Write something...."></textarea>
-                                                        <div class="p-2 bg-light d-flex justify-content-between align-items-center">
-                                                            <div>
-                                                                <a href="#" class="btn btn-sm px-2 fs-16 btn-light"><i class="ri-contacts-book-2-line"></i></a>
-                                                                <a href="#" class="btn btn-sm px-2 fs-16 btn-light"><i class="ri-map-pin-line"></i></a>
-                                                                <a href="#" class="btn btn-sm px-2 fs-16 btn-light"><i class="ri-camera-3-line"></i></a>
-                                                                <a href="#" class="btn btn-sm px-2 fs-16 btn-light"><i class="ri-emoji-sticker-line"></i></a>
-                                                            </div>
-                                                            <button type="submit" class="btn btn-sm btn-dark">Post</button>
-                                                        </div>
-                                                    </form>
-                                                </div> <!-- end .border-->
-                                                <!-- end comment box -->
-    
-                                                <!-- Story Box-->
-                                                <div class="border border-light rounded p-2 mb-3">
-                                                    <div class="d-flex">
-                                                        <img class="me-2 rounded-circle" src="assets/images/users/avatar-4.jpg"
-                                                            alt="Generic placeholder image" height="32">
-                                                        <div>
-                                                            <h5 class="m-0">Thelma Fridley</h5>
-                                                            <p class="text-muted"><small>about 1 hour ago</small></p>
-                                                        </div>
-                                                    </div>
-                                                    <div class="fs-16 text-center fst-italic text-dark">
-                                                        <i class="ri-double-quotes-l fs-20"></i> Cras sit amet nibh libero, in
-                                                        gravida nulla. Nulla vel metus scelerisque ante sollicitudin. Cras
-                                                        purus odio, vestibulum in vulputate at, tempus viverra turpis. Duis
-                                                        sagittis ipsum. Praesent mauris. Fusce nec tellus sed augue semper
-                                                        porta. Mauris massa.
-                                                    </div>
-    
-                                                    <div class="mx-n2 p-2 mt-3 bg-light">
-                                                        <div class="d-flex">
-                                                            <img class="me-2 rounded-circle" src="assets/images/users/avatar-3.jpg"
-                                                                alt="Generic placeholder image" height="32">
-                                                            <div>
-                                                                <h5 class="mt-0">Jeremy Tomlinson <small class="text-muted">about 2 minuts ago</small></h5>
-                                                                Nice work, makes me think of The Money Pit.
-    
-                                                                <br/>
-                                                                <a href="javascript: void(0);" class="text-muted fs-13 d-inline-block mt-2"><i
-                                                                    class="ri-reply-line"></i> Reply</a>
-    
-                                                                <div class="d-flex mt-3">
-                                                                    <a class="pe-2" href="#">
-                                                                        <img src="assets/images/users/avatar-4.jpg" class="rounded-circle"
-                                                                            alt="Generic placeholder image" height="32">
-                                                                    </a>
-                                                                    <div>
-                                                                        <h5 class="mt-0">Thelma Fridley <small class="text-muted">5 hours ago</small></h5>
-                                                                        i'm in the middle of a timelapse animation myself! (Very different though.) Awesome stuff.
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-    
-                                                        <div class="d-flex mt-2">
-                                                            <a class="pe-2" href="#">
-                                                                <img src="assets/images/users/avatar-1.jpg" class="rounded-circle"
-                                                                    alt="Generic placeholder image" height="32">
-                                                            </a>
-                                                            <div class="w-100">
-                                                                <input type="text" id="simpleinput" class="form-control border-0 form-control-sm" placeholder="Add comment">
-                                                            </div>
-                                                        </div>
-                                                    </div>
-    
-                                                    <div class="mt-2">
-                                                        <a href="javascript: void(0);" class="btn btn-sm btn-link text-danger"><i
-                                                                class="ri-heart-line"></i> Like (28)</a>
-                                                        <a href="javascript: void(0);" class="btn btn-sm btn-link text-muted"><i
-                                                                class="ri-share-line"></i> Share</a>
-                                                    </div>
-                                                </div>
-    
-                                                <!-- Story Box-->
-                                                <div class="border border-light rounded p-2 mb-3">
-                                                    <div class="d-flex">
-                                                        <img class="me-2 rounded-circle" src="assets/images/users/avatar-3.jpg"
-                                                            alt="Generic placeholder image" height="32">
-                                                        <div>
-                                                            <h5 class="m-0">Jeremy Tomlinson</h5>
-                                                            <p class="text-muted"><small>3 hours ago</small></p>
-                                                        </div>
-                                                    </div>
-                                                    <p>Story based around the idea of time lapse, animation to post soon!</p>
-    
-                                                    <img src="assets/images/small/small-1.jpg" alt="post-img" class="rounded me-1"
-                                                        height="60" />
-                                                    <img src="assets/images/small/small-2.jpg" alt="post-img" class="rounded me-1"
-                                                        height="60" />
-                                                    <img src="assets/images/small/small-3.jpg" alt="post-img" class="rounded"
-                                                        height="60" />
-    
-                                                    <div class="mt-2">
-                                                        <a href="javascript: void(0);" class="btn btn-sm btn-link text-muted"><i
-                                                                class="ri-reply-line"></i> Reply</a>
-                                                        <a href="javascript: void(0);" class="btn btn-sm btn-link text-muted"><i
-                                                                class="ri-heart-line"></i> Like</a>
-                                                        <a href="javascript: void(0);" class="btn btn-sm btn-link text-muted"><i
-                                                                class="ri-share-line"></i> Share</a>
-                                                    </div>
-                                                </div>
-                                                
-                                                <!-- Story Box-->
-                                                <div class="border border-light p-2 mb-3">
-                                                    <div class="d-flex">
-                                                        <img class="me-2 rounded-circle" src="assets/images/users/avatar-6.jpg"
-                                                            alt="Generic placeholder image" height="32">
-                                                        <div>
-                                                            <h5 class="m-0">Martin Williamson</h5>
-                                                            <p class="text-muted"><small>15 hours ago</small></p>
-                                                        </div>
-                                                    </div>
-                                                    <p>The parallax is a little odd but O.o that house build is awesome!!</p>
-    
-                                                    <iframe src='https://player.vimeo.com/video/87993762' height='300' class="img-fluid border-0"></iframe>
-                                                </div>
-    
+                                           
+                                      
                                                 <div class="text-center">
                                                     <a href="javascript:void(0);" class="text-danger"><i class="ri-loader-fill me-1"></i> Load more </a>
                                                 </div>
@@ -1358,7 +1860,91 @@
                                 </div> <!-- end card -->
                             </div> <!-- end col -->
                         </div>
-                        <!-- end row-->
+                
+        <!-- Modal actions Particulier (indépendante) -->
+        <div class="modal fade" id="particulierActionsModal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                  <i class="ri-flashlight-line me-1"></i>
+                  Actions pour: <span class="fw-semibold" id="pa_nom"></span>
+                  <small class="text-muted ms-2" id="pa_numero"></small>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+              </div>
+              <div class="modal-body">
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <div class="card h-100 border">
+                      <div class="card-body d-flex">
+                        <div class="flex-shrink-0 me-3"><i class="ri-id-card-line fs-2 text-primary"></i></div>
+                        <div class="flex-grow-1">
+                          <h6 class="card-title mb-1">Émettre un permis de conduire temporaire</h6>
+                          <p class="text-muted small mb-2">Créer un permis provisoire pour une durée limitée.</p>
+                          <button class="btn btn-sm btn-primary" disabled>Prochainement</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="card h-100 border">
+                      <div class="card-body d-flex">
+                        <div class="flex-shrink-0 me-3"><i class="ri-car-line fs-2 text-info"></i></div>
+                        <div class="flex-grow-1">
+                          <h6 class="card-title mb-1">Associer un véhicule</h6>
+                          <p class="text-muted small mb-2">Lier un véhicule existant à cet individu.</p>
+                          <button class="btn btn-sm btn-info text-white" id="pa_action_associer_btn" data-bs-toggle="modal" data-bs-target="#associerVehiculeModal">Associer un véhicule</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="card h-100 border">
+                      <div class="card-body d-flex">
+                        <div class="flex-shrink-0 me-3"><i class="ri-alarm-warning-line fs-2 text-warning"></i></div>
+                        <div class="flex-grow-1">
+                          <h6 class="card-title mb-1">Sanctionner l'individu</h6>
+                          <p class="text-muted small mb-2">Enregistrer une sanction administrative.</p>
+                          <button class="btn btn-sm btn-warning" id="pa_action_sanction_btn">Créer une contravention</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="card h-100 border">
+                      <div class="card-body d-flex">
+                        <div class="flex-shrink-0 me-3"><i class="ri-handcuffs-line fs-2 text-danger"></i></div>
+                        <div class="flex-grow-1">
+                          <h6 class="card-title mb-1">Arrestation de l'individu</h6>
+                          <p class="text-muted small mb-2">Consigner une interpellation et motif.</p>
+                          <button class="btn btn-sm btn-danger" disabled>Prochainement</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="card h-100 border">
+                      <div class="card-body d-flex">
+                        <div class="flex-shrink-0 me-3"><i class="ri-notification-badge-line fs-2 text-secondary"></i></div>
+                        <div class="flex-grow-1">
+                          <h6 class="card-title mb-1">Lancer un avis de recherche</h6>
+                          <p class="text-muted small mb-2">Déclencher un avis de recherche pour cet individu.</p>
+                          <button type="button" class="btn btn-sm btn-danger btn-launch-avis" data-action="launch-avis">Émettre un avis de recherche</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Fermer</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Vendor js -->
 
                     </div>
                     <!-- container -->
@@ -1570,6 +2156,63 @@
             </div>
         </div>          
         
+        <!-- Modal: Assigner une contravention -->
+        <div class="modal fade" id="assignContravModal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title"><i class="ri-ticket-2-line me-2"></i>Assigner une contravention</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                <div class="alert alert-info py-2 mb-3" id="ac_target_label" style="display:none"></div>
+                <form id="assign-contrav-form">
+                  <input type="hidden" name="dossier_id" id="ac_dossier_id">
+                  <input type="hidden" name="type_dossier" id="ac_type_dossier">
+                  <div class="row g-3">
+                    <div class="col-md-4">
+                      <label class="form-label">Date de l'infraction</label>
+                      <input type="date" class="form-control" name="date_infraction" required>
+                    </div>
+                    <div class="col-md-8">
+                      <label class="form-label">Lieu</label>
+                      <input type="text" class="form-control" name="lieu" placeholder="Lieu de l'infraction" required>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label">Type d'infraction</label>
+                      <input type="text" class="form-control" name="type_infraction" placeholder="Ex: Excès de vitesse" required>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label">Référence de la loi</label>
+                      <input type="text" class="form-control" name="reference_loi" placeholder="Ex: Art. 12 ...">
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label">Montant de l'amende (CDF)</label>
+                      <input type="number" min="0" step="1" class="form-control" name="amende" placeholder="Ex: 50000" required>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label">Payé ?</label>
+                      <select class="form-select" name="payed">
+                        <option value="0" selected>Non</option>
+                        <option value="1">Oui</option>
+                      </select>
+                    </div>
+                    <div class="col-12">
+                      <label class="form-label">Description</label>
+                      <textarea class="form-control" name="description" rows="3" placeholder="Détails supplémentaires (optionnel)"></textarea>
+                    </div>
+                  </div>
+                </form>
+                <div class="alert mt-3 d-none" id="ac_feedback"></div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-success" id="ac_submit_btn">Enregistrer</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Vendor js -->
         <script src="assets/js/vendor.min.js"></script>
 
@@ -1589,6 +2232,202 @@
 
         <!-- App js -->
         <script src="assets/js/app.min.js"></script>
+
+        <script>
+        (function(){
+          // Restore handler for .btn-assign-contrav (assign contravention to conducteur/véhicule/entreprise)
+          document.addEventListener('click', function(e){
+            const btn = e.target.closest('.btn-assign-contrav');
+            if (!btn) return;
+            e.preventDefault();
+            e.stopPropagation();
+            // Read context from button
+            const typeDossier = btn.getAttribute('data-dossier-type') || '';
+            const dossierId = btn.getAttribute('data-dossier-id') || '';
+            const targetLabel = btn.getAttribute('data-target-label') || '';
+
+            const modalAssign = document.getElementById('assignContravModal');
+            if (!modalAssign) return;
+
+            // Fill form hidden fields and info label
+            const typeEl = document.getElementById('ac_type_dossier');
+            const idEl = document.getElementById('ac_dossier_id');
+            const infoEl = document.getElementById('ac_target_label');
+            if (typeEl) typeEl.value = typeDossier;
+            if (idEl) idEl.value = dossierId;
+            if (infoEl) { infoEl.textContent = targetLabel; infoEl.style.display = targetLabel ? 'block' : 'none'; }
+
+            // Ensure modal exists directly under body
+            try { if (modalAssign.parentElement && modalAssign.parentElement !== document.body) document.body.appendChild(modalAssign); } catch(_){ }
+
+            // If clicked inside another modal, close it first then open assign
+            const currentModal = btn.closest('.modal');
+            const openAssign = function(){
+              try {
+                if (window.jQuery && $.fn && $.fn.modal) {
+                  $('#assignContravModal').modal('show');
+                } else if (window.bootstrap && bootstrap.Modal) {
+                  (bootstrap.Modal.getInstance(modalAssign) || new bootstrap.Modal(modalAssign)).show();
+                } else {
+                  // Fallback
+                  modalAssign.style.display = 'block';
+                  modalAssign.classList.add('show');
+                  modalAssign.setAttribute('aria-hidden','false');
+                  const bd = document.createElement('div'); bd.className = 'modal-backdrop fade show'; document.body.appendChild(bd);
+                  document.body.classList.add('modal-open');
+                }
+              } catch(_){
+                modalAssign.style.display = 'block';
+                modalAssign.classList.add('show');
+              }
+            };
+            if (currentModal && currentModal !== modalAssign && currentModal.classList.contains('show')) {
+              const onHidden = function(){
+                currentModal.removeEventListener('hidden.bs.modal', onHidden);
+                requestAnimationFrame(openAssign);
+              };
+              currentModal.addEventListener('hidden.bs.modal', onHidden);
+              try {
+                if (window.jQuery && $.fn && $.fn.modal) {
+                  $(currentModal).modal('hide');
+                } else if (window.bootstrap && bootstrap.Modal) {
+                  (bootstrap.Modal.getInstance(currentModal) || new bootstrap.Modal(currentModal)).hide();
+                } else {
+                  currentModal.classList.remove('show');
+                  currentModal.style.display = 'none';
+                  document.querySelectorAll('.modal-backdrop').forEach(b=>b.remove());
+                  onHidden();
+                }
+              } catch(_){ onHidden(); }
+            } else {
+              openAssign();
+            }
+          });
+
+          // Prefill from localStorage if present
+          function loadRecentContraventionPrefill() {
+            try {
+              const raw = localStorage.getItem('recent_contravention_prefill');
+              if (!raw) return null;
+              return JSON.parse(raw);
+            } catch (e) { return null; }
+          }
+          function saveRecentContraventionPrefill(formEl) {
+            try {
+              const data = {
+                date_infraction: formEl.querySelector('[name="date_infraction"]').value || '',
+                lieu: formEl.querySelector('[name="lieu"]').value || '',
+                type_infraction: formEl.querySelector('[name="type_infraction"]').value || '',
+                reference_loi: formEl.querySelector('[name="reference_loi"]').value || '',
+                amende: formEl.querySelector('[name="amende"]').value || '',
+                payed: formEl.querySelector('[name="payed"]').value || '0'
+              };
+              localStorage.setItem('recent_contravention_prefill', JSON.stringify(data));
+            } catch (e) { /* ignore */ }
+          }
+
+          // Handle click on "Sanctionner l'individu"
+          document.addEventListener('click', function(e){
+            const btn = e.target.closest('#pa_action_sanction_btn');
+            if (!btn) return;
+            // Find selected particulier context from the actions modal header
+            const nom = document.getElementById('pa_nom')?.textContent?.trim() || '';
+            const numero = document.getElementById('pa_numero')?.textContent?.trim() || '';
+            const datasetEl = document.querySelector('#particulierActionsModal');
+            // We expect we previously set hidden context when opening modal; fallback by finding the row marked as active, else use data cached globally if any
+            // Prefer reading cached last selected row info if populated by elsewhere
+            let lastCtx = window.__lastParticulierCtx || {};
+            if (!lastCtx.id) {
+              try { lastCtx = JSON.parse(localStorage.getItem('recent_particulier_ctx')||'{}') || {}; } catch {}
+            }
+            const dossierId = lastCtx.id || datasetEl?.getAttribute('data-dossier-id') || '';
+
+            // Close actions modal then open contravention modal
+            const actionsModalEl = document.getElementById('particulierActionsModal');
+            bootstrap.Modal.getInstance(actionsModalEl)?.hide();
+
+            // Persist last selected particulier context
+            try {
+              localStorage.setItem('recent_particulier_ctx', JSON.stringify({ id: dossierId }));
+            } catch (e) { /* ignore */ }
+
+            // Prefill assign contravention modal
+            const mEl = document.getElementById('assignContravModal');
+            const recent = loadRecentContraventionPrefill();
+            document.getElementById('ac_type_dossier').value = 'particuliers';
+            document.getElementById('ac_dossier_id').value = dossierId;
+            const info = document.getElementById('ac_target_label');
+            info.textContent = nom ? (nom + (numero ? ' ('+numero+')' : '')) : '';
+            info.style.display = nom ? 'block' : 'none';
+            if (recent) {
+              const f = document.getElementById('assign-contravention-form') || document.getElementById('assign-contrav-form') || document.getElementById('assign-contrav-form');
+            }
+            // Fill known ids using standard form id
+            const form = document.getElementById('assign-contrav-form');
+            if (recent && form) {
+              form.querySelector('[name="date_infraction"]').value = recent.date_infraction || '';
+              form.querySelector('[name="lieu"]').value = recent.lieu || '';
+              form.querySelector('[name="type_infraction"]').value = recent.type_infraction || '';
+              form.querySelector('[name="reference_loi"]').value = recent.reference_loi || '';
+              form.querySelector('[name="amende"]').value = recent.amende || '';
+              form.querySelector('[name="payed"]').value = recent.payed || '0';
+            }
+            bootstrap.Modal.getOrCreateInstance(mEl).show();
+          });
+
+          // Submit form
+          const submitBtn = document.getElementById('ac_submit_btn');
+          const form = document.getElementById('assign-contrav-form');
+          const feedback = document.getElementById('ac_feedback');
+          if (submitBtn && !window.CAN_EDIT) submitBtn.disabled = true;
+          submitBtn?.addEventListener('click', async function(){
+            if (!window.CAN_EDIT) { alert('Action réservée au superadmin'); return; }
+            // Require dossier_id
+            const did = (document.getElementById('ac_dossier_id')?.value || '').trim();
+            const t = (document.getElementById('ac_type_dossier')?.value || '').trim();
+            if (!did || !t) { alert('Veuillez sélectionner un dossier valide avant de soumettre.'); return; }
+            if (!form.checkValidity()) { form.reportValidity(); return; }
+            submitBtn.disabled = true;
+            feedback.classList.remove('d-none','alert-success','alert-danger');
+            feedback.classList.add('alert','alert-info');
+            feedback.textContent = 'Enregistrement en cours...';
+            try {
+              const formData = new FormData(form);
+              // ensure payed field exists
+              if (!formData.has('payed')) formData.set('payed','0');
+              const resp = await fetch('/contravention/create', { method:'POST', body: formData });
+              const data = await resp.json();
+              if (!resp.ok || data.state === false || data.ok === false) {
+                const msg = data.message || data.error || 'Erreur lors de l\'enregistrement';
+                throw new Error(msg);
+              }
+              // Persist recent values for prefill next time
+              saveRecentContraventionPrefill(form);
+              // Immediately reset form fields so they don't remain filled
+              try { form.reset(); } catch {}
+              const hidDid = document.getElementById('ac_dossier_id'); if (hidDid) hidDid.value = '';
+              const hidType = document.getElementById('ac_type_dossier'); if (hidType) hidType.value = '';
+              const info = document.getElementById('ac_target_label'); if (info) { info.textContent = ''; info.style.display = 'none'; }
+              feedback.classList.remove('alert-info');
+              feedback.classList.add('alert-success');
+              feedback.textContent = 'Contravention enregistrée avec succès';
+              // Close after short delay and optionally refresh
+              setTimeout(()=>{ 
+                const modalEl = document.getElementById('assignContravModal');
+                bootstrap.Modal.getInstance(modalEl)?.hide();
+                // simple strategy: reload to update lists if necessary
+                location.reload();
+              }, 800);
+            } catch(err){
+              feedback.classList.remove('alert-info');
+              feedback.classList.add('alert-danger');
+              feedback.textContent = err.message || 'Erreur inconnue';
+            } finally {
+              submitBtn.disabled = false;
+            }
+          });
+        })();
+        </script>
 
          <!-- Include Modal creation de compte agent -->
          <?php require_once '_partials/_modal_agent_account.php'; ?>

@@ -64,6 +64,21 @@
                                     </div>
                                 </div>
 
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="frontiere_entree" class="form-label">Frontière d'entrée</label>
+                                            <input type="text" name="frontiere_entree" id="frontiere_entree" class="form-control" placeholder="Ex: Kasumbalesa, Goma, etc.">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="date_importation" class="form-label">Date d'importation</label>
+                                            <input type="date" name="date_importation" id="date_importation" class="form-control" value="">
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- Informations plaque d'immatriculation -->
                                 <div class="row">
                                     <div class="col-md-4">
@@ -74,14 +89,14 @@
                                     </div>
                                     <div class="col-md-4">
                                         <div class="mb-3">
-                                            <label for="plaque_valide_le" class="form-label">Plaque valide le <span class="text-danger">*</span></label>
-                                            <input type="date" name="plaque_valide_le" id="plaque_valide_le" class="form-control" value="<?php echo date('Y-m-d'); ?>" required>
+                                            <label for="plaque_valide_le" class="form-label">Plaque valide le</label>
+                                            <input type="date" name="plaque_valide_le" id="plaque_valide_le" class="form-control" value="">
                                         </div>
                                     </div>
                                     <div class="col-md-4">
                                         <div class="mb-3">
-                                            <label for="plaque_expire_le" class="form-label">Plaque expire le <span class="text-danger"></span></label>
-                                            <input type="date" name="plaque_expire_le" id="plaque_expire_le" class="form-control" value="<?php echo date('Y-m-d'); ?>" >
+                                            <label for="plaque_expire_le" class="form-label">Plaque expire le</label>
+                                            <input type="date" name="plaque_expire_le" id="plaque_expire_le" class="form-control" value="">
                                         </div>
                                     </div>
                                 </div>
@@ -97,14 +112,14 @@
                                 <div class="row">
                                     <div class="col-md-6">
                                         <div class="mb-3">
-                                            <label for="nume_assurance" class="form-label">Numéro d'assurance <span class="text-danger">*</span></label>
-                                            <input type="text" name="nume_assurance" id="nume_assurance" class="form-control" placeholder="Numéro de police d'assurance" required>
+                                            <label for="nume_assurance" class="form-label">Numéro d'assurance</label>
+                                            <input type="text" name="nume_assurance" id="nume_assurance" class="form-control" placeholder="Numéro de police d'assurance">
                                         </div>
                                     </div>
                                     <div class="col-md-6">
                                         <div class="mb-3">
-                                            <label for="societe_assurance" class="form-label">Société d'assurance <span class="text-danger">*</span></label>
-                                            <input type="text" name="societe_assurance" id="societe_assurance" class="form-control" placeholder="Nom de la compagnie d'assurance" required>
+                                            <label for="societe_assurance" class="form-label">Société d'assurance</label>
+                                            <input type="text" name="societe_assurance" id="societe_assurance" class="form-control" placeholder="Nom de la compagnie d'assurance">
                                         </div>
                                     </div>
                                 </div>
@@ -112,14 +127,14 @@
                                 <div class="row">
                                     <div class="col-md-6">
                                         <div class="mb-3">
-                                            <label for="date_valide_assurance" class="form-label">Assurance valide le <span class="text-danger">*</span></label>
-                                            <input type="date" name="date_valide_assurance" id="date_valide_assurance" class="form-control" value="<?php echo date('Y-m-d'); ?>" required>
+                                            <label for="date_valide_assurance" class="form-label">Assurance valide le</label>
+                                            <input type="date" name="date_valide_assurance" id="date_valide_assurance" class="form-control" value="">
                                         </div>
                                     </div>
                                     <div class="col-md-6">
                                         <div class="mb-3">
-                                            <label for="date_expire_assurance" class="form-label">Assurance expire le <span class="text-danger">*</span></label>
-                                            <input type="date" name="date_expire_assurance" id="date_expire_assurance" class="form-control" value="<?php echo date('Y-m-d'); ?>" required>
+                                            <label for="date_expire_assurance" class="form-label">Assurance expire le</label>
+                                            <input type="date" name="date_expire_assurance" id="date_expire_assurance" class="form-control" value="">
                                         </div>
                                     </div>
                                 </div>

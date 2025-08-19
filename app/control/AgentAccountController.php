@@ -77,7 +77,7 @@ class AgentAccountController extends Db {
             $agent->password = md5($data['password']);
             $agent->created_at = date('Y-m-d H:i:s');
             $agent->status = 'active';
-            $agent->first_connexion = 'no'; // Ajouter ce champ manquant
+            $agent->first_connexion = 'yes'; // Ajouter ce champ manquant
             
             // Optionnel: planning de connexion (login_schedule)
             if (isset($data['schedule']) && is_array($data['schedule'])) {

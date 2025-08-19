@@ -32,17 +32,20 @@ class VehiculePlaqueController extends Db
         $vehicule_plaque->annee = $data['annee'];
         $vehicule_plaque->couleur = $data['couleur'];
         $vehicule_plaque->numero_chassis = $data['numero_chassis'] ?? null;
+        // Import information
+        $vehicule_plaque->frontiere_entree = isset($data['frontiere_entree']) && $data['frontiere_entree'] !== '' ? $data['frontiere_entree'] : null;
+        $vehicule_plaque->date_importation = isset($data['date_importation']) && $data['date_importation'] !== '' ? $data['date_importation'] : null;
         
         // License plate information
         $vehicule_plaque->plaque = $data['plaque'];
-        $vehicule_plaque->plaque_valide_le = $data['plaque_valide_le'];
-        $vehicule_plaque->plaque_expire_le = $data['plaque_expire_le'];
+        $vehicule_plaque->plaque_valide_le = isset($data['plaque_valide_le']) && $data['plaque_valide_le'] !== '' ? $data['plaque_valide_le'] : null;
+        $vehicule_plaque->plaque_expire_le = isset($data['plaque_expire_le']) && $data['plaque_expire_le'] !== '' ? $data['plaque_expire_le'] : null;
         
         // Insurance information
-        $vehicule_plaque->nume_assurance = $data['nume_assurance'];
-        $vehicule_plaque->date_expire_assurance = $data['date_expire_assurance'];
-        $vehicule_plaque->date_valide_assurance = $data['date_valide_assurance'];
-        $vehicule_plaque->societe_assurance = $data['societe_assurance'];
+        $vehicule_plaque->nume_assurance = isset($data['nume_assurance']) && $data['nume_assurance'] !== '' ? $data['nume_assurance'] : null;
+        $vehicule_plaque->date_expire_assurance = isset($data['date_expire_assurance']) && $data['date_expire_assurance'] !== '' ? $data['date_expire_assurance'] : null;
+        $vehicule_plaque->date_valide_assurance = isset($data['date_valide_assurance']) && $data['date_valide_assurance'] !== '' ? $data['date_valide_assurance'] : null;
+        $vehicule_plaque->societe_assurance = isset($data['societe_assurance']) && $data['societe_assurance'] !== '' ? $data['societe_assurance'] : null;
         
         $vehicule_plaque->save();
         
@@ -123,5 +126,37 @@ class VehiculePlaqueController extends Db
         }
         
         return $imagePaths;
+    }
+
+    /**
+     * Recherche de véhicule par plaque.
+     * Si une correspondance exacte (insensible à la casse) existe, la renvoyer en priorité.
+     * Sinon, renvoie une liste limitée par LIKE.
+     * @param string $plate
+     * @param int $limit
+     * @return array
+     */
+    public function searchByPlate(string $plate, int $limit = 10): array
+    {
+        $this->getConnexion();
+        $p = trim($plate);
+        if ($p === '') return [];
+        try {
+            // Exact match (case-insensitive)
+            $stmt = ORM::get_db()->prepare("SELECT * FROM `vehicule_plaque` WHERE UPPER(`plaque`) = :pl ORDER BY id ASC");
+            $stmt->execute([':pl' => mb_strtoupper($p, 'UTF-8')]);
+            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+            if ($rows) return $rows;
+            // Fallback LIKE
+            $stmt2 = ORM::get_db()->prepare("SELECT * FROM `vehicule_plaque` WHERE `plaque` LIKE :pl ORDER BY id DESC LIMIT :lim");
+            $like = '%' . $p . '%';
+            $stmt2->bindValue(':pl', $like, \PDO::PARAM_STR);
+            $stmt2->bindValue(':lim', max(1, min(100, $limit)), \PDO::PARAM_INT);
+            $stmt2->execute();
+            return $stmt2->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $e) {
+            error_log('[VehiculePlaqueController] searchByPlate error: ' . $e->getMessage());
+            return [];
+        }
     }
 }
