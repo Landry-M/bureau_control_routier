@@ -87,6 +87,7 @@ class SearchController extends Db {
             $vehiculeContraventions = []; // of selected/first record
             $vehiculeCandidates = []; // all matching by exact plate (case-insensitive)
             $vehiculeContraventionsById = []; // map id => list
+            $vehiculeOwnersById = []; // map id => ['pid'=>..., 'proprietaire'=>...]
             $vehiculePk = null; // primary key column name for vehicule_plaque
             if ($type === 'vehicule_plaque' && !empty($results)) {
                 try {
@@ -96,7 +97,8 @@ class SearchController extends Db {
                     $pkStmt = $pdo->prepare("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_KEY='PRI' ORDER BY ORDINAL_POSITION LIMIT 1");
                     $pkStmt->execute([$this->dbName, 'vehicule_plaque']);
                     $pk = $pkStmt->fetchColumn();
-                    $vehiculePk = $pk ?: null;
+                    if (!$pk || !is_string($pk) || $pk === '') { $pk = 'id'; }
+                    $vehiculePk = $pk;
                     if ($pk) {
                         // Load candidates matching exact plate (case-insensitive). If none, fallback to IDs from $results
                         $candStmt = $pdo->prepare("SELECT * FROM `vehicule_plaque` WHERE UPPER(`plaque`) = :plaque ORDER BY `$pk` ASC");
@@ -131,6 +133,34 @@ class SearchController extends Db {
                                 }
                                 $firstId = (string)($vehiculeRecord[$pk] ?? '');
                                 $vehiculeContraventions = $vehiculeContraventionsById[$firstId] ?? [];
+
+                                // Load current owner for each candidate (latest association) using MAX(id)
+                                try {
+                                    $in = implode(',', array_fill(0, count($candIds), '?'));
+                                    $sql = "SELECT pv.vehicule_plaque_id AS vid, p.id AS pid, p.nom AS proprietaire
+                                            FROM particulier_vehicule pv
+                                            JOIN (
+                                                SELECT vehicule_plaque_id, MAX(id) AS max_id
+                                                FROM particulier_vehicule
+                                                WHERE vehicule_plaque_id IN ($in)
+                                                GROUP BY vehicule_plaque_id
+                                            ) t ON t.max_id = pv.id
+                                            JOIN particuliers p ON p.id = pv.particulier_id";
+                                    $stmt = ORM::get_db()->prepare($sql);
+                                    $stmt->execute($candIds);
+                                    $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+                                    foreach ($rows as $row) {
+                                        $vid = (string)($row['vid'] ?? '');
+                                        if ($vid !== '') {
+                                            $vehiculeOwnersById[$vid] = [
+                                                'pid' => $row['pid'] ?? null,
+                                                'proprietaire' => $row['proprietaire'] ?? null,
+                                            ];
+                                        }
+                                    }
+                                } catch (\Throwable $e) {
+                                    // keep existing partial map; do not wipe out
+                                }
                             }
                         }
                     }
@@ -140,6 +170,7 @@ class SearchController extends Db {
                     $vehiculeContraventions = [];
                     $vehiculeCandidates = [];
                     $vehiculeContraventionsById = [];
+                    $vehiculeOwnersById = [];
                 }
             }
             include 'views/search_results.php';

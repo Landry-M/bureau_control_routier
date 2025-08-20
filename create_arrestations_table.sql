@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS `arrestations` (
   `motif` TEXT NOT NULL,
   `lieu` VARCHAR(255) NULL,
   `date_arrestation` DATETIME NULL,
+  `date_sortie_prison` DATETIME NULL,
   `created_by` VARCHAR(100) NULL,
   `created_at` DATETIME NOT NULL,
   `updated_at` DATETIME NOT NULL,

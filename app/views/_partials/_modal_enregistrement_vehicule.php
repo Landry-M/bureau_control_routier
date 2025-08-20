@@ -83,8 +83,8 @@
                                 <div class="row">
                                     <div class="col-md-4">
                                         <div class="mb-3">
-                                            <label for="plaque" class="form-label">Plaque d'immatriculation <span class="text-danger">*</span></label>
-                                            <input type="text" name="plaque" id="plaque" class="form-control" placeholder="Ex: AB-123-CD" style="text-transform: uppercase;" required>
+                                            <label for="plaque" class="form-label">Plaque d'immatriculation</label>
+                                            <input type="text" name="plaque" id="plaque" class="form-control" placeholder="Ex: AB-123-CD" style="text-transform: uppercase;">
                                         </div>
                                     </div>
                                     <div class="col-md-4">

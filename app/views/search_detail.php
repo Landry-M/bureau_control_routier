@@ -100,6 +100,32 @@
                     }
                     // S'assurer que l'image principale est dans la liste
                     if ($imageUrl !== '') { $pushImg($imageUrl); }
+
+                    // Données liées si c'est un particulier: véhicules, état détention et avis de recherche
+                    $isParticulier = in_array(strtolower($tableName), ['particulier','particuliers'], true);
+                    $particulierId = 0;
+                    if ($isParticulier) {
+                        if (isset($record['id']) && is_scalar($record['id'])) {
+                            $particulierId = (int)$record['id'];
+                        } elseif ($displayId !== '') {
+                            $particulierId = (int)$displayId;
+                        }
+                    }
+                    $pv_list = [];
+                    $arrestations_list = [];
+                    $avis_list = [];
+                    $enDetention = false;
+                    if ($isParticulier && $particulierId > 0) {
+                        try { $pv_list = (new \Control\ParticulierVehiculeController())->listByParticulier($particulierId); } catch (\Throwable $e) { $pv_list = []; }
+                        try { $arrestations_list = (new \Control\ArrestationController())->listByParticulier($particulierId); } catch (\Throwable $e) { $arrestations_list = []; }
+                        try { $avis_list = (new \Control\AvisRechercheController())->listByParticulier($particulierId); } catch (\Throwable $e) { $avis_list = []; }
+                        if (is_array($arrestations_list)) {
+                            foreach ($arrestations_list as $ar) {
+                                $ds = $ar['date_sortie_prison'] ?? null;
+                                if ($ds === null || $ds === '' ) { $enDetention = true; break; }
+                            }
+                        }
+                    }
                 ?>
 
                 <div class="row">
@@ -139,6 +165,9 @@
                                     <span class="badge bg-secondary text-uppercase"><?php echo htmlspecialchars($tableName); ?></span>
                                     <?php if ($displayId !== ''): ?>
                                         <span class="badge bg-outline-secondary border text-dark ms-1">ID: <?php echo htmlspecialchars($displayId); ?></span>
+                                    <?php endif; ?>
+                                    <?php if ($isParticulier && $enDetention): ?>
+                                        <span class="badge bg-danger ms-1">En détention</span>
                                     <?php endif; ?>
                                 </p>
 
@@ -268,6 +297,87 @@
                               </div>
                             </div>
                         <?php endforeach; ?>
+                        <?php endif; ?>
+
+                        <?php if ($isParticulier && !empty($pv_list)): ?>
+                        <div class="card mt-3">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h4 class="header-title mb-0">Véhicules associés</h4>
+                                    <span class="badge bg-secondary"><?php echo count($pv_list); ?></span>
+                                </div>
+                                <div class="table-responsive border rounded">
+                                    <table class="table table-sm table-hover align-middle mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Plaque</th>
+                                                <th>Marque</th>
+                                                <th>Modèle</th>
+                                                <th>Couleur</th>
+                                                <th>Année</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($pv_list as $i => $pv): ?>
+                                            <tr>
+                                                <td class="text-muted"><?php echo $i+1; ?></td>
+                                                <td class="fw-semibold"><?php echo htmlspecialchars((string)($pv['plaque'] ?? '')); ?></td>
+                                                <td><?php echo htmlspecialchars((string)($pv['marque'] ?? '')); ?></td>
+                                                <td><?php echo htmlspecialchars((string)($pv['modele'] ?? '')); ?></td>
+                                                <td><?php echo htmlspecialchars((string)($pv['couleur'] ?? '')); ?></td>
+                                                <td><?php echo htmlspecialchars((string)($pv['annee'] ?? '')); ?></td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+
+                        <?php if ($isParticulier && !empty($avis_list)): ?>
+                        <div class="card mt-3">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h4 class="header-title mb-0">Avis de recherche</h4>
+                                    <span class="badge bg-secondary"><?php echo count($avis_list); ?></span>
+                                </div>
+                                <div class="table-responsive border rounded">
+                                    <table class="table table-sm table-hover align-middle mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Motif</th>
+                                                <th>Niveau</th>
+                                                <th>Statut</th>
+                                                <th>Créé le</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($avis_list as $i => $av): ?>
+                                            <tr>
+                                                <td class="text-muted"><?php echo $i+1; ?></td>
+                                                <td style="max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="<?php echo htmlspecialchars((string)($av['motif'] ?? '')); ?>"><?php echo htmlspecialchars((string)($av['motif'] ?? '')); ?></td>
+                                                <td><?php echo htmlspecialchars((string)($av['niveau'] ?? '')); ?></td>
+                                                <td>
+                                                    <?php $st = (string)($av['statut'] ?? '');
+                                                    $cls = $st === 'actif' ? 'bg-danger' : 'bg-success';
+                                                    echo '<span class="badge ' . $cls . '">' . htmlspecialchars($st) . '</span>'; ?>
+                                                </td>
+                                                <td>
+                                                    <?php $d = (string)($av['created_at'] ?? ''); $fmt = '';
+                                                    if ($d) { $ts = strtotime($d); if ($ts) { $fmt = date('d-m-Y', $ts); } }
+                                                    echo htmlspecialchars($fmt ?: $d);
+                                                    ?>
+                                                </td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
                         <?php endif; ?>
                     </div>
 

@@ -136,6 +136,21 @@
                                                             <input id="vp_numero_chassis" type="text" class="form-control" value="<?= htmlspecialchars((string)($vehiculeRecord['numero_chassis'] ?? '')) ?>" disabled>
                                                         </div>
                                                         <div class="col-md-6">
+                                                            <label class="form-label">Propriétaire</label>
+                                                            <?php
+                                                                $pkCol = isset($vehiculePk) && $vehiculePk ? $vehiculePk : 'id';
+                                                                $firstId = (string)($vehiculeRecord[$pkCol] ?? '');
+                                                                $ownersMap = $vehiculeOwnersById ?? [];
+                                                                $ownerName = '';
+                                                                $ownerPid = '';
+                                                                if ($firstId !== '' && isset($ownersMap[$firstId])) {
+                                                                    $ownerName = trim((string)($ownersMap[$firstId]['proprietaire'] ?? ''));
+                                                                    $ownerPid = (string)($ownersMap[$firstId]['pid'] ?? '');
+                                                                }
+                                                            ?>
+                                                            <input id="vp_proprietaire" type="text" class="form-control" value="<?= $ownerName !== '' ? htmlspecialchars($ownerName) : 'N/A' ?>" disabled>
+                                                        </div>
+                                                        <div class="col-md-6">
                                                             <label class="form-label">Frontière d'entrée</label>
                                                             <?php $__front = trim((string)($vehiculeRecord['frontiere_entree'] ?? '')); ?>
                                                             <input id="vp_frontiere_entree" type="text" class="form-control" value="<?= $__front !== '' ? htmlspecialchars($__front) : 'N/A' ?>" disabled>
@@ -263,11 +278,13 @@
                                         const pk = <?= json_encode($vehiculePk ?: 'id') ?>;
                                         const candidates = <?= json_encode($vehiculeCandidates ?? []) ?>;
                                         const contravsById = <?= json_encode($vehiculeContraventionsById ?? []) ?>;
+                                        const ownersById = <?= json_encode($vehiculeOwnersById ?? []) ?>;
                                         const sel = document.getElementById('vehiculeCandidateSelect');
                                         if (!sel) return;
                                         const btnAssign = document.querySelector('.btn-assign-contrav');
                                         const img = document.getElementById('vp_image');
                                         const icon = document.getElementById('vp_icon');
+                                        const ownerInput = document.getElementById('vp_proprietaire');
                                         function isExpired(dateStr){
                                             if (!dateStr) return false;
                                             const d = new Date(String(dateStr));
@@ -348,6 +365,11 @@
                                             setVal('vp_annee', rec.annee);
                                             setVal('vp_couleur', rec.couleur);
                                             setVal('vp_numero_chassis', rec.numero_chassis);
+                                            if (ownerInput) {
+                                                const ow = ownersById[String(rec[pk])] || null;
+                                                const name = ow && ow.proprietaire ? String(ow.proprietaire) : 'N/A';
+                                                ownerInput.value = name;
+                                            }
                                             setVal('vp_frontiere_entree', rec.frontiere_entree);
                                             setVal('vp_date_importation', fmtDate(rec.date_importation));
                                             setVal('vp_plaque_valide_le', fmtDate(rec.plaque_valide_le));
@@ -525,11 +547,13 @@
                         </div>
                     </div>
                 </div>
-
             </div>
         </div>
     </div>
 </div>
+
+<?php // Ensure the Particulier Details modal is available on this page ?>
+<?php try { include __DIR__ . '/partials/particulier_details_modal.php'; } catch (\Throwable $e) { /* ignore include errors */ } ?>
 
 <?php // Include vehicle registration modal so it can be triggered from this page ?>
 <?php require_once '_partials/_modal_enregistrement_vehicule.php'; ?>

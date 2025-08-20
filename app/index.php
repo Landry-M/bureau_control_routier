@@ -46,6 +46,257 @@ $router->map('GET','/',function (){
     }
 });
 
+// API: Remettre un véhicule en circulation (met en_circulation=1)
+$router->map('POST','/vehicule/[i:id]/remettre', function($id){
+    // JSON clean response
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        // Initialiser la connexion DB pour configurer Idiorm correctement
+        (new \Model\Db())->getConnexion();
+        $vehIdPath = (int)$id;
+        $vehIdPost = isset($_POST['vehicule_id']) ? (int)$_POST['vehicule_id'] : 0;
+        $vehId = $vehIdPath > 0 ? $vehIdPath : $vehIdPost;
+        if ($vehId <= 0) { ob_clean(); http_response_code(400); echo json_encode(['ok'=>false,'error'=>'Paramètres manquants']); return; }
+        // Charger le véhicule
+        $row = \ORM::for_table('vehicule_plaque')->find_one($vehId);
+        if (!$row) { ob_clean(); http_response_code(404); echo json_encode(['ok'=>false,'error'=>'Véhicule introuvable']); return; }
+        // Mémoriser l'ancien état
+        $old = [ 'en_circulation' => isset($row->en_circulation) ? (int)$row->en_circulation : null ];
+        // Remettre en circulation
+        $row->set('en_circulation', 1);
+        $row->save();
+        // Etat après
+        $afterRow = \ORM::for_table('vehicule_plaque')->find_one($vehId);
+        $after = $afterRow ? [ 'en_circulation' => isset($afterRow->en_circulation) ? (int)$afterRow->en_circulation : null ] : null;
+        // Journaliser
+        try {
+            (new \Model\ActivityLogger())->logUpdate(
+                $_SESSION['user']['username'] ?? null,
+                'vehicule_plaque',
+                (int)$row->id,
+                $old,
+                [ 'en_circulation' => 1 ]
+            );
+        } catch (\Throwable $e) { /* ignore logging errors */ }
+        ob_clean(); echo json_encode(['ok'=>true, 'before'=>$old, 'after'=>$after]);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
+    }
+});
+
+// API: Retirer une plaque d'immatriculation d'un véhicule
+$router->map('POST','/plaque/retirer', function(){
+    // JSON clean response
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        // Initialiser la connexion DB pour configurer Idiorm correctement
+        (new \Model\Db())->getConnexion();
+        $vehId = isset($_POST['vehicule_id']) ? (int)$_POST['vehicule_id'] : 0;
+        $raison = isset($_POST['raison']) ? trim((string)$_POST['raison']) : '';
+        if ($vehId <= 0 || $raison === '') { ob_clean(); http_response_code(400); echo json_encode(['ok'=>false,'error'=>'Paramètres manquants']); return; }
+        // Charger le véhicule
+        $row = \ORM::for_table('vehicule_plaque')->find_one($vehId);
+        if (!$row) { ob_clean(); http_response_code(404); echo json_encode(['ok'=>false,'error'=>'Véhicule introuvable']); return; }
+        // Mémoriser l'ancien état pour log éventuel
+        $old = [
+            'en_circulation' => isset($row->en_circulation) ? (int)$row->en_circulation : null,
+            'plaque' => $row->plaque,
+            'plaque_valide_le' => $row->plaque_valide_le,
+            'plaque_expire_le' => $row->plaque_expire_le
+        ];
+        // Mettre le véhicule hors circulation sans toucher aux champs de plaque
+        $row->set('en_circulation', 0);
+        $row->save();
+        // Relire l'état après sauvegarde
+        $afterRow = \ORM::for_table('vehicule_plaque')->find_one($vehId);
+        $after = $afterRow ? [
+            'en_circulation' => isset($afterRow->en_circulation) ? (int)$afterRow->en_circulation : null,
+            'plaque' => $afterRow->plaque,
+            'plaque_valide_le' => $afterRow->plaque_valide_le,
+            'plaque_expire_le' => $afterRow->plaque_expire_le
+        ] : null;
+        // Optionnel: logger
+        try {
+            $logger = new \Model\ActivityLogger();
+            $logger->logUpdate(
+                $_SESSION['user']['username'] ?? null,
+                'vehicule_plaque',
+                (int)$row->id,
+                $old,
+                [ 'en_circulation' => 0, 'raison' => $raison ]
+            );
+        } catch (\Throwable $e) { /* ignore logging errors */ }
+        ob_clean(); echo json_encode(['ok'=>true, 'before'=>$old, 'after'=>$after]);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
+    }
+});
+
+// API: Retirer un véhicule de la circulation (met en_circulation=0)
+$router->map('POST','/vehicule/[i:id]/retirer', function($id){
+    // JSON clean response
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        // Initialiser la connexion DB pour configurer Idiorm correctement
+        (new \Model\Db())->getConnexion();
+        $vehIdPath = (int)$id;
+        $vehIdPost = isset($_POST['vehicule_id']) ? (int)$_POST['vehicule_id'] : 0;
+        $vehId = $vehIdPath > 0 ? $vehIdPath : $vehIdPost;
+        $raison = isset($_POST['raison']) ? trim((string)$_POST['raison']) : '';
+        // date_effet optionnelle (non utilisée pour l'instant)
+        $dateEffet = isset($_POST['date_effet']) ? trim((string)$_POST['date_effet']) : null;
+        if ($vehId <= 0) { ob_clean(); http_response_code(400); echo json_encode(['ok'=>false,'error'=>'Paramètres manquants']); return; }
+        // Charger le véhicule
+        $row = \ORM::for_table('vehicule_plaque')->find_one($vehId);
+        if (!$row) { ob_clean(); http_response_code(404); echo json_encode(['ok'=>false,'error'=>'Véhicule introuvable']); return; }
+        // Mémoriser l'ancien état
+        $old = [ 'en_circulation' => isset($row->en_circulation) ? (int)$row->en_circulation : null ];
+        // Mettre hors circulation
+        $row->set('en_circulation', 0);
+        $row->save();
+        // Etat après
+        $afterRow = \ORM::for_table('vehicule_plaque')->find_one($vehId);
+        $after = $afterRow ? [ 'en_circulation' => isset($afterRow->en_circulation) ? (int)$afterRow->en_circulation : null ] : null;
+        // Journaliser
+        try {
+            (new \Model\ActivityLogger())->logUpdate(
+                $_SESSION['user']['username'] ?? null,
+                'vehicule_plaque',
+                (int)$row->id,
+                $old,
+                [ 'en_circulation' => 0, 'raison' => $raison, 'date_effet' => $dateEffet ]
+            );
+        } catch (\Throwable $e) { /* ignore logging errors */ }
+        ob_clean(); echo json_encode(['ok'=>true, 'before'=>$old, 'after'=>$after]);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
+    }
+});
+
+// API: Permis temporaire - lister par véhicule
+$router->map('GET','/vehicule/[i:id]/permis-temporaire', function($id){
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $ctrl = new PermisTemporaireController();
+        $rows = $ctrl->listByVehicule((int)$id);
+        ob_clean(); echo json_encode(['ok'=>true,'data'=>$rows]);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
+    }
+});
+
+// API: Plaque temporaire pour un véhicule
+$router->map('POST','/plaque/temporaire', function(){
+    // Réponse JSON propre
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $vehId = isset($_POST['vehicule_id']) ? (int)$_POST['vehicule_id'] : 0;
+        $numero = isset($_POST['numero']) ? trim((string)$_POST['numero']) : '';
+        $du = isset($_POST['du']) ? trim((string)$_POST['du']) : '';
+        $au = isset($_POST['au']) ? trim((string)$_POST['au']) : '';
+        if ($vehId <= 0 || $numero === '') {
+            ob_clean(); http_response_code(400); echo json_encode(['ok'=>false,'error'=>'Paramètres manquants']); return;
+        }
+        $payload = [
+            'cible_type' => 'vehicule_plaque',
+            'cible_id' => $vehId,
+            'numero' => $numero,
+            'motif' => 'plaque_temporaire'
+        ];
+        if ($du !== '') { $payload['date_debut'] = $du; }
+        if ($au !== '') { $payload['date_fin'] = $au; }
+        $ctrl = new PermisTemporaireController();
+        $res = $ctrl->create($payload);
+        ob_clean(); echo json_encode($res);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
+// API: transférer la propriété d'un véhicule à un particulier
+$router->map('POST','/vehicule/[i:id]/transferer', function($id){
+    // JSON propre sans pollution d'output
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $vehIdPath = (int)$id;
+        $vehIdPost = isset($_POST['vehicule_id']) ? (int)$_POST['vehicule_id'] : 0;
+        // Fiabiliser: si les deux existent et diffèrent, on prend celui de l'URL
+        $vehId = $vehIdPath > 0 ? $vehIdPath : $vehIdPost;
+        $newOwner = isset($_POST['nouveau_proprietaire']) ? (int)$_POST['nouveau_proprietaire'] : 0;
+        $motif = isset($_POST['motif']) ? trim((string)$_POST['motif']) : null;
+        if ($vehId <= 0 || $newOwner <= 0) { ob_clean(); http_response_code(400); echo json_encode(['ok'=>false,'error'=>'Paramètres manquants']); return; }
+        $ctrl = new ParticulierVehiculeController();
+        $res = $ctrl->transferOwnership($vehId, $newOwner, $motif);
+        // Journaliser l'opération
+        try {
+            (new \Model\ActivityLogger())->logUpdate(
+                $_SESSION['user']['username'] ?? null,
+                'vehicule_transfer',
+                $vehId,
+                null,
+                ['nouveau_proprietaire'=>$newOwner, 'motif'=>$motif, 'result'=>$res['ok'] ?? null]
+            );
+        } catch (\Throwable $e) { /* ignore logging errors */ }
+        ob_clean(); echo json_encode($res);
+    } catch (Exception $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
+// API: Particulier - lister les arrestations (JSON)
+$router->map('GET','/particulier/[i:id]/arrestations', function($id){
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $ctrl = new ArrestationController();
+        $rows = $ctrl->listByParticulier((int)$id) ?? [];
+        ob_clean(); echo json_encode(['ok'=>true,'items'=>$rows]);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
+// API: Arrestation - libérer par ID
+$router->map('POST','/arrestation/[i:id]/release', function($id){
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $ctrl = new ArrestationController();
+        $res = $ctrl->releaseById((int)$id, $_POST['date_sortie_prison'] ?? null);
+        ob_clean(); echo json_encode($res);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
+// API: Particulier - libérer la dernière arrestation active
+$router->map('POST','/particulier/[i:id]/liberer', function($id){
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $ctrl = new ArrestationController();
+        $res = $ctrl->releaseLatestActiveByParticulier((int)$id, $_POST['date_sortie_prison'] ?? null);
+        ob_clean(); echo json_encode($res);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
 // API: Arrestation d'un particulier - consigner
 $router->map('POST','/arrestation', function(){
     // Réponse JSON propre
@@ -250,6 +501,27 @@ $router->map('GET','/api/vehicules/search', function(){
     }
 });
 
+// API: rechercher des particuliers par nom (pour transfert véhicule)
+$router->map('GET','/particuliers/search', function(){
+    // Réponse JSON propre
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $q = isset($_GET['q']) ? trim((string)$_GET['q']) : '';
+        $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 20;
+        $ctrl = new ParticulierController();
+        $rows = $ctrl->searchByName($q, $limit);
+        // Journaliser la recherche
+        try {
+            (new \Model\ActivityLogger())->logSearch($_SESSION['user']['username'] ?? null, 'particuliers_search', ['q'=>$q, 'limit'=>$limit], is_array($rows) ? count($rows) : null);
+        } catch (\Throwable $e) { /* ignore logging errors */ }
+        ob_clean(); echo json_encode(['ok'=>true,'items'=>$rows]);
+    } catch (Exception $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
 // Admin: migration des contraventions -> remapper dossier_id vers ID primaire
 $router->map('GET','/admin/migrate-contraventions-dossier-id', function(){
     header('Content-Type: application/json; charset=utf-8');
@@ -427,6 +699,25 @@ $router->map('GET','/particulier/[i:id]/contraventions', function($id){
         $dossierId = (string)$id;
         $ctrl = new \Control\ContraventionController();
         $rows = $ctrl->getByDossierIdAndType($dossierId, 'particuliers');
+        echo json_encode(['ok'=>true,'data'=>$rows]);
+    } catch (\Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
+// API: contraventions d'un véhicule (JSON)
+$router->map('GET','/vehicule/[i:id]/contraventions', function($id){
+    header('Content-Type: application/json');
+    if(!isset($_SESSION['user'])){
+        http_response_code(401);
+        echo json_encode(['ok'=>false,'error'=>'Unauthorized']);
+        return;
+    }
+    try {
+        $dossierId = (string)$id;
+        $ctrl = new \Control\ContraventionController();
+        $rows = $ctrl->getByDossierIdAndType($dossierId, 'vehicule_plaque');
         echo json_encode(['ok'=>true,'data'=>$rows]);
     } catch (\Throwable $e) {
         http_response_code(500);

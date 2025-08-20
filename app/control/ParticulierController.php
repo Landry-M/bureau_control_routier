@@ -83,4 +83,30 @@ class ParticulierController extends Db{
             return [];
         }
     }
+
+    /**
+     * Rechercher des particuliers par nom (utilisé par le transfert de véhicule)
+     * @param string $q
+     * @param int $limit
+     * @return array{id:int,nom:string,numero_national?:string,gsm?:string}[]
+     */
+    public function searchByName(string $q = '', int $limit = 20): array
+    {
+        try {
+            $this->getConnexion();
+            $q = trim($q);
+            $orm = ORM::for_table('particuliers')
+                ->select_many('id','nom','numero_national','gsm')
+                ->order_by_asc('nom');
+            if ($q !== '') {
+                $orm = $orm->where_like('nom', '%'.$q.'%');
+            }
+            if ($limit > 0) { $orm = $orm->limit($limit); }
+            $rows = $orm->find_array();
+            return is_array($rows) ? $rows : [];
+        } catch (Exception $e) {
+            error_log('ParticulierController::searchByName error: '.$e->getMessage());
+            return [];
+        }
+    }
 }

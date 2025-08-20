@@ -30,13 +30,22 @@ class PermisTemporaireController extends Db
         $motif = trim((string)($data['motif'] ?? ''));
         $dateDebut = trim((string)($data['date_debut'] ?? date('Y-m-d')));
         $dateFin = trim((string)($data['date_fin'] ?? ''));
+        // Si date_fin manquante, la définir par défaut à +7 jours après date_debut
+        if ($dateFin === '') {
+            $base = $dateDebut !== '' ? $dateDebut : date('Y-m-d');
+            $dateFin = date('Y-m-d', strtotime($base . ' +7 days'));
+        }
 
         if ($cibleType === '' || $cibleId <= 0 || $dateDebut === '' || $dateFin === '') {
             return ['ok' => false, 'error' => 'Paramètres invalides'];
         }
 
         $now = date('Y-m-d H:i:s');
-        $numero = $this->generateNumero();
+        // Permettre un numéro fourni (ex: plaque temporaire saisie par l'agent), sinon auto-générer
+        $numero = trim((string)($data['numero'] ?? ''));
+        if ($numero === '') {
+            $numero = $this->generateNumero();
+        }
 
         $row = ORM::for_table('permis_temporaire')->create();
         $row->cible_type = $cibleType;
@@ -81,6 +90,24 @@ class PermisTemporaireController extends Db
             $_SESSION['user']['username'] ?? null,
             'permis_temporaire_particulier',
             ['particulier_id' => $pid, 'results' => count($rows)]
+        );
+        return $rows ?: [];
+    }
+
+    public function listByVehicule(int $vehiculeId)
+    {
+        $this->getConnexion();
+        $vid = (int)$vehiculeId;
+        if ($vid <= 0) return [];
+        $rows = ORM::for_table('permis_temporaire')
+            ->where('cible_type', 'vehicule_plaque')
+            ->where('cible_id', $vid)
+            ->order_by_desc('id')
+            ->find_array();
+        $this->activityLogger->logView(
+            $_SESSION['user']['username'] ?? null,
+            'permis_temporaire_vehicule',
+            ['vehicule_id' => $vid, 'results' => is_array($rows) ? count($rows) : 0]
         );
         return $rows ?: [];
     }

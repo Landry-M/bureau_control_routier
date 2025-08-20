@@ -84,4 +84,65 @@ class ParticulierVehiculeController extends Db
         $stmt->execute([':pid' => $particulierId]);
         return $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
     }
+
+    /**
+     * Transférer la propriété d'un véhicule à un particulier.
+     * Supprime les associations existantes pour ce véhicule puis en crée une nouvelle.
+     * @param int $vehiculeId
+     * @param int $nouveauParticulierId
+     * @param string|null $motif
+     * @return array
+     */
+    public function transferOwnership(int $vehiculeId, int $nouveauParticulierId, ?string $motif = null): array
+    {
+        $this->getConnexion();
+        if ($vehiculeId <= 0 || $nouveauParticulierId <= 0) {
+            return ['ok' => false, 'error' => 'Paramètres invalides'];
+        }
+        $db = ORM::get_db();
+        try {
+            // Vérifier l'existence du véhicule et du particulier
+            $veh = ORM::for_table('vehicule_plaque')->find_one($vehiculeId);
+            if (!$veh) { return ['ok'=>false, 'error'=>'Véhicule introuvable']; }
+            $part = ORM::for_table('particuliers')->find_one($nouveauParticulierId);
+            if (!$part) { return ['ok'=>false, 'error'=>'Particulier introuvable']; }
+            $db->beginTransaction();
+            // Supprimer anciennes associations
+            $del = $db->prepare('DELETE FROM particulier_vehicule WHERE vehicule_plaque_id = :vid');
+            $del->execute([':vid' => $vehiculeId]);
+            // Créer la nouvelle association
+            $assoc = ORM::for_table('particulier_vehicule')->create();
+            $assoc->particulier_id = $nouveauParticulierId;
+            $assoc->vehicule_plaque_id = $vehiculeId;
+            $assoc->date_assoc = date('Y-m-d H:i:s');
+            $note = 'Transfert de propriété';
+            if ($motif) { $note .= ' - Motif: ' . $motif; }
+            $assoc->notes = $note;
+            $assoc->created_at = date('Y-m-d H:i:s');
+            $assoc->created_by = $_SESSION['username'] ?? null;
+            $assoc->save();
+            $newId = (int)$assoc->id();
+            $db->commit();
+            // Log activité
+            try {
+                $this->activityLogger->logUpdate(
+                    $_SESSION['username'] ?? null,
+                    'particulier_vehicule',
+                    $newId,
+                    null,
+                    [
+                        'action' => 'transfer_ownership',
+                        'vehicule_plaque_id' => $vehiculeId,
+                        'nouveau_particulier_id' => $nouveauParticulierId,
+                        'motif' => $motif
+                    ]
+                );
+            } catch (\Throwable $e) { /* non bloquant */ }
+            return ['ok' => true, 'id' => $newId];
+        } catch (\Throwable $e) {
+            try { $db->rollBack(); } catch (\Throwable $e2) {}
+            error_log('[ParticulierVehiculeController] transferOwnership error: ' . $e->getMessage());
+            return ['ok' => false, 'error' => 'Erreur lors du transfert'];
+        }
+    }
 }
