@@ -95,6 +95,45 @@ class DossierController extends Db {
                 ->order_by_desc('id')
                 ->find_array();
 
+            // Étape 1b: enrichir avec plaque temporaire depuis permis_temporaire (numero, date_debut, date_fin)
+            // Hypothèse de liaison: permis_temporaire.numero = vehicule_plaque.plaque
+            if (!empty($vehicules)) {
+                $plaques = array_values(array_filter(array_map(function($v){ return trim((string)($v['plaque'] ?? '')); }, $vehicules)));
+                if (!empty($plaques)) {
+                    $rowsTemp = ORM::for_table('permis_temporaire')
+                        ->where('statut', 'actif')
+                        ->where_in('numero', $plaques)
+                        ->order_by_desc('date_fin')
+                        ->find_array();
+                    // Indexer par numero (garder le plus récent)
+                    $byNumero = [];
+                    foreach ($rowsTemp as $r) {
+                        $num = trim((string)($r['numero'] ?? ''));
+                        if ($num === '') continue;
+                        if (!isset($byNumero[$num])) {
+                            $byNumero[$num] = $r;
+                        }
+                    }
+                    // Projection sur $vehicules
+                    foreach ($vehicules as &$v) {
+                        $plq = trim((string)($v['plaque'] ?? ''));
+                        if ($plq !== '' && isset($byNumero[$plq])) {
+                            $t = $byNumero[$plq];
+                            $v['plaque_temporaire'] = 1;
+                            $v['numero_plaque_temp'] = $t['numero'] ?? null;
+                            $v['plaque_temp_valide_du'] = $t['date_debut'] ?? null;
+                            $v['plaque_temp_valide_au'] = $t['date_fin'] ?? null;
+                        } else {
+                            $v['plaque_temporaire'] = 0;
+                            $v['numero_plaque_temp'] = null;
+                            $v['plaque_temp_valide_du'] = null;
+                            $v['plaque_temp_valide_au'] = null;
+                        }
+                    }
+                    unset($v);
+                }
+            }
+
             // Étape 2: récupérer toutes les contraventions liées aux véhicules par dossier_id = vehicule_id
             $contraventionsByVehicule = [];
             if (!empty($vehicules)) {
@@ -149,9 +188,24 @@ class DossierController extends Db {
         try {
             $this->getConnexion();
 
-            // Récupérer toutes les entreprises (récents d'abord)
+            // Pagination basique
+            $page = isset($_GET['ent_page']) ? (int)$_GET['ent_page'] : 1;
+            if ($page < 1) $page = 1;
+            $perPage = isset($_GET['ent_per_page']) ? (int)$_GET['ent_per_page'] : 20;
+            if ($perPage < 5) $perPage = 20; if ($perPage > 100) $perPage = 100;
+
+            // Total pour pagination
+            $totalEntreprises = ORM::for_table('entreprises')->count();
+            $totalPages = $perPage > 0 ? (int)ceil($totalEntreprises / $perPage) : 1;
+            if ($totalPages < 1) $totalPages = 1;
+            if ($page > $totalPages) $page = $totalPages;
+            $offset = ($page - 1) * $perPage;
+
+            // Récupérer les entreprises paginées (récents d'abord)
             $entreprises = ORM::for_table('entreprises')
                 ->order_by_desc('id')
+                ->limit($perPage)
+                ->offset($offset)
                 ->find_array();
 
             // Contraventions liées aux entreprises par id (clé primaire)
@@ -189,12 +243,18 @@ class DossierController extends Db {
             $this->activityLogger->logView(
                 $_SESSION['username'] ?? null,
                 'dossiers_entreprises',
-                "Consultation des dossiers entreprises (" . count($entreprises) . " entreprises)"
+                "Consultation des dossiers entreprises (page $page/$totalPages, perPage $perPage, affichées " . count($entreprises) . "/$totalEntreprises)"
             );
             
             return [
                 'entreprises' => array_values($entreprises),
                 'contraventionsByEntreprise' => $contraventionsByEntreprise,
+                'ent_pagination' => [
+                    'total' => (int)$totalEntreprises,
+                    'page' => (int)$page,
+                    'per_page' => (int)$perPage,
+                    'total_pages' => (int)$totalPages,
+                ],
             ];
         } catch (\Exception $e) {
             return [

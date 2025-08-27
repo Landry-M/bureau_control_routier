@@ -5,6 +5,8 @@ namespace Control;
 use Model\Db;
 use Model\ActivityLogger;
 use ORM;
+// PDF
+use Dompdf\Dompdf;
 
 class PermisTemporaireController extends Db
 {
@@ -73,7 +75,51 @@ class PermisTemporaireController extends Db
             ]
         );
 
-        return ['ok' => true, 'id' => $id, 'numero' => $numero];
+        // Génération PDF (paysage) avec le numéro
+        $pdfInfo = null; $pdfError = null;
+        try {
+            // Générer le PDF selon le type de cible
+            if ($cibleType === 'vehicule_plaque' && class_exists('Dompdf\\Dompdf')) {
+                $pdfInfo = $this->generateTempPlatePdf([
+                    'id' => $id,
+                    'numero' => $numero,
+                    'cible_type' => $cibleType,
+                    'cible_id' => $cibleId,
+                    'date_debut' => $dateDebut,
+                    'date_fin' => $dateFin,
+                ]);
+                if (!$pdfInfo || empty($pdfInfo['path']) || !is_file($pdfInfo['path'])) {
+                    $pdfError = 'PDF non écrit sur le disque';
+                }
+            } elseif ($cibleType === 'particulier' && class_exists('Dompdf\\Dompdf')) {
+                $pdfInfo = $this->generatePermisParticulierPdf([
+                    'id' => $id,
+                    'numero' => $numero,
+                    'cible_type' => $cibleType,
+                    'cible_id' => $cibleId,
+                    'date_debut' => $dateDebut,
+                    'date_fin' => $dateFin,
+                ]);
+                if (!$pdfInfo || empty($pdfInfo['path']) || !is_file($pdfInfo['path'])) {
+                    $pdfError = 'PDF non écrit sur le disque';
+                }
+            } else {
+                if (!class_exists('Dompdf\\Dompdf')) {
+                    $pdfError = 'Dompdf non disponible';
+                }
+            }
+        } catch (\Throwable $e) {
+            $pdfError = 'Erreur PDF: ' . $e->getMessage();
+        }
+
+        $res = ['ok' => true, 'id' => $id, 'numero' => $numero];
+        if ($pdfInfo && isset($pdfInfo['path'])) {
+            // Prefer absolute URL, then relative URL, then filesystem path
+            $res['pdf'] = $pdfInfo['public_url'] ?? ($pdfInfo['relative_url'] ?? $pdfInfo['path']);
+            if (isset($pdfInfo['filename'])) { $res['filename'] = $pdfInfo['filename']; }
+        }
+        if ($pdfError) { $res['pdf_error'] = $pdfError; }
+        return $res;
     }
 
     public function listByParticulier(int $particulierId)
@@ -131,5 +177,108 @@ class PermisTemporaireController extends Db
             ['statut' => 'clos']
         );
         return ['ok' => true, 'id' => $rid];
+    }
+
+    // Génère un PDF paysage avec le numéro de plaque/permis temporaire
+    private function generateTempPlatePdf(array $data)
+    {
+        // Préparer le HTML via la vue dédiée
+        ob_start();
+        $numero = $data['numero'] ?? '';
+        $date_debut = $data['date_debut'] ?? null;
+        $date_fin = $data['date_fin'] ?? null;
+        include __DIR__ . '/../views/pdf/plaque_temporaire.php';
+        $html = ob_get_clean();
+
+        $dompdf = new Dompdf(['isRemoteEnabled' => true]);
+        $dompdf->loadHtml($html);
+        $dompdf->setPaper('A4', 'landscape');
+        $dompdf->render();
+
+        // Sauvegarder dans uploads/permis_temporaire
+        $dir = __DIR__ . '/../uploads/permis_temporaire';
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+        if (!is_dir($dir)) {
+            // Echec de création
+            throw new \RuntimeException('Impossible de créer le répertoire: ' . $dir);
+        }
+        if (!is_writable($dir)) {
+            @chmod($dir, 0775);
+        }
+        if (!is_writable($dir)) {
+            throw new \RuntimeException('Répertoire non inscriptible: ' . $dir);
+        }
+        $filename = 'permis_temporaire_' . ($data['id'] ?? 'N') . '.pdf';
+        $filePath = $dir . '/' . $filename;
+        $bytes = @file_put_contents($filePath, $dompdf->output());
+        if ($bytes === false || !is_file($filePath) || filesize($filePath) <= 0) {
+            throw new \RuntimeException('Echec écriture PDF dans ' . $filePath);
+        }
+
+        // URL publique et relative (pour le Front)
+        $basePath = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? ''), '/');
+        $relativeUrl = $basePath . '/uploads/permis_temporaire/' . $filename;
+        $publicUrl = null;
+        if (isset($_SERVER['HTTP_HOST'])) {
+            $scheme = isset($_SERVER['REQUEST_SCHEME']) ? $_SERVER['REQUEST_SCHEME'] : 'http';
+            $publicUrl = $scheme . '://' . $_SERVER['HTTP_HOST'] . $relativeUrl;
+        }
+
+        return ['path' => $filePath, 'public_url' => $publicUrl, 'relative_url' => $relativeUrl, 'filename' => $filename];
+    }
+
+    // Génère un PDF permis temporaire pour un particulier à partir de la vue HTML dédiée
+    private function generatePermisParticulierPdf(array $data)
+    {
+        // Récupérer les infos du particulier
+        $this->getConnexion();
+        $pid = (int)($data['cible_id'] ?? 0);
+        $part = null;
+        if ($pid > 0) {
+            $row = ORM::for_table('particuliers')->find_one($pid);
+            if ($row) { $part = $row->as_array(); }
+        }
+        if (!$part) {
+            throw new \RuntimeException('Particulier introuvable pour le permis temporaire');
+        }
+
+        // Préparer le HTML via la vue dédiée
+        ob_start();
+        $numero = $data['numero'] ?? '';
+        $date_debut = $data['date_debut'] ?? null;
+        $date_fin = $data['date_fin'] ?? null;
+        include __DIR__ . '/../views/pdf/permis_temporaire_particulier.php';
+        $html = ob_get_clean();
+
+        $dompdf = new Dompdf(['isRemoteEnabled' => true]);
+        $dompdf->loadHtml($html);
+        $dompdf->setPaper('A4', 'landscape');
+        $dompdf->render();
+
+        // Sauvegarder dans uploads/permis_temporaire
+        $dir = __DIR__ . '/../uploads/permis_temporaire';
+        if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
+        if (!is_dir($dir)) { throw new \RuntimeException('Impossible de créer le répertoire: ' . $dir); }
+        if (!is_writable($dir)) { @chmod($dir, 0775); }
+        if (!is_writable($dir)) { throw new \RuntimeException('Répertoire non inscriptible: ' . $dir); }
+        $filename = 'permis_temporaire_particulier_' . ($data['id'] ?? 'N') . '.pdf';
+        $filePath = $dir . '/' . $filename;
+        $bytes = @file_put_contents($filePath, $dompdf->output());
+        if ($bytes === false || !is_file($filePath) || filesize($filePath) <= 0) {
+            throw new \RuntimeException('Echec écriture PDF dans ' . $filePath);
+        }
+
+        // URL publique et relative
+        $basePath = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? ''), '/');
+        $relativeUrl = $basePath . '/uploads/permis_temporaire/' . $filename;
+        $publicUrl = null;
+        if (isset($_SERVER['HTTP_HOST'])) {
+            $scheme = isset($_SERVER['REQUEST_SCHEME']) ? $_SERVER['REQUEST_SCHEME'] : 'http';
+            $publicUrl = $scheme . '://' . $_SERVER['HTTP_HOST'] . $relativeUrl;
+        }
+
+        return ['path' => $filePath, 'public_url' => $publicUrl, 'relative_url' => $relativeUrl, 'filename' => $filename];
     }
 }

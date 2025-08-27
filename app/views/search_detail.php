@@ -291,6 +291,9 @@
                                     </div>
                                   </div>
                                   <div class="modal-footer">
+                                    <button type="button" class="btn btn-outline-primary view-cv-detail-pdf" data-contrav-id="<?php echo htmlspecialchars((string)($cv['id'] ?? '')); ?>" title="Voir le PDF">
+                                      <i class="ri-eye-line me-1"></i> Voir le PDF
+                                    </button>
                                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Fermer</button>
                                   </div>
                                 </div>
@@ -650,6 +653,20 @@ function onContraventionPayedSwitchChange(id, checkbox, modalId) {
           if (checkbox) checkbox.checked = previous === 1;
       });
 }
+
+// PDF viewing handler for contravention details modal
+document.addEventListener('click', function(e){
+  const btn = e.target.closest && e.target.closest('.view-cv-detail-pdf');
+  if (!btn) return;
+  const contraventionId = btn.getAttribute('data-contrav-id');
+  if (!contraventionId) {
+    alert('ID de contravention manquant');
+    return;
+  }
+  // Open PDF in new window/tab
+  const pdfUrl = `/uploads/contraventions/contravention_${contraventionId}.pdf`;
+  window.open(pdfUrl, '_blank');
+});
 </script>
 
 <?php if (isset($_SESSION['error'])): ?>

@@ -8,6 +8,7 @@ $baseDir = dirname($vendorDir);
 return array(
     'AltoRouter' => $vendorDir . '/altorouter/altorouter/AltoRouter.php',
     'Composer\\InstalledVersions' => $vendorDir . '/composer/InstalledVersions.php',
+    'Dompdf\\Cpdf' => $vendorDir . '/dompdf/dompdf/lib/Cpdf.php',
     'IdiormMethodMissingException' => $vendorDir . '/j4mie/idiorm/idiorm.php',
     'IdiormResultSet' => $vendorDir . '/j4mie/idiorm/idiorm.php',
     'IdiormString' => $vendorDir . '/j4mie/idiorm/idiorm.php',

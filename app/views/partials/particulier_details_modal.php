@@ -17,6 +17,12 @@
     const tbody = document.getElementById('pt_arrest_tbody');
     if (!modal || !tbody) return;
 
+    // Elements for Permis temporaire banner in the modal
+    const permisBanner = document.getElementById('pt_permis_banner');
+    const permisText = document.getElementById('pt_permis_text');
+    const permisBadge = document.getElementById('pt_permis_badge');
+    const btnClosePermis = document.getElementById('pt_btn_close_permis');
+
   function parseISODate(s){
     if (!s) return null;
     // Accept formats like YYYY-MM-DD or DD/MM/YYYY; try native Date first
@@ -29,7 +35,153 @@
       const d2 = new Date(yy, mm, dd);
       if (!isNaN(d2.getTime())) return d2;
     }
-    return null;
+
+  async function loadPermisTemporaire(){
+    try {
+      const pid = modal.getAttribute('data-pt-id') || modal.getAttribute('data-id');
+      if (!pid) return;
+      const resp = await fetch(`/particulier/${encodeURIComponent(pid)}/permis-temporaire`, { method: 'GET' });
+      const json = await resp.json().catch(()=>({ ok:false, data:[] }));
+      if (!json || json.ok !== true) return;
+      const list = Array.isArray(json.data) ? json.data : [];
+      const active = list.find(p => (p.statut||'') === 'actif');
+      if (active && permisBanner) {
+        const numero = active.numero || '';
+        const dd = active.date_debut || active.dateDebut || '';
+        const df = active.date_fin || active.dateFin || '';
+        const ddDisp = window.formatDMY ? (window.formatDMY(dd) || dd) : dd;
+        const dfDisp = window.formatDMY ? (window.formatDMY(df) || df) : df;
+        if (permisText) permisText.textContent = `${numero ? 'N° ' + numero + ' — ' : ''}du ${ddDisp} au ${dfDisp}`;
+        if (btnClosePermis) btnClosePermis.setAttribute('data-permis-id', String(active.id||''));
+        // Determine expiration
+        let isExpired = false;
+        try {
+          if (df) {
+            const t = new Date(); const today = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+            const end = new Date(df);
+            const endDateOnly = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+            isExpired = endDateOnly < today;
+          }
+        } catch {}
+        if (isExpired) {
+          if (permisBadge) permisBadge.classList.remove('d-none');
+          permisBanner.classList.remove('alert-success');
+          permisBanner.classList.add('alert-danger');
+        } else {
+          if (permisBadge) permisBadge.classList.add('d-none');
+          permisBanner.classList.remove('alert-danger');
+          permisBanner.classList.add('alert-success');
+        }
+        permisBanner.classList.remove('d-none');
+      } else if (permisBanner) {
+        // No active permit
+        permisBanner.classList.add('d-none');
+        if (btnClosePermis) btnClosePermis.removeAttribute('data-permis-id');
+      }
+    } catch(_){ /* no-op */ }
+  }
+  }
+
+  async function loadContraventions(){
+    const tbody = document.getElementById('pt_cv_tbody');
+    const modalId = modal.getAttribute('data-pt-id') || modal.getAttribute('data-id') || '';
+    if (!tbody || !modalId) return;
+    try {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Chargement...</td></tr>';
+      // Try to grab numero national already displayed in the modal (if any)
+      const numeroEl = document.getElementById('pt_numero_national');
+      const numero = numeroEl ? (numeroEl.textContent || '').trim() : '';
+      const url = `/particulier/${encodeURIComponent(modalId)}/contraventions` + (numero ? `?numero=${encodeURIComponent(numero)}` : '');
+      const resp = await fetch(url, { method: 'GET' });
+      const json = await resp.json();
+      if (!json || json.ok !== true) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Erreur de chargement</td></tr>';
+        return;
+      }
+      const rows = Array.isArray(json.data) ? json.data : [];
+      if (rows.length === 0){
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Aucune contravention</td></tr>';
+        return;
+      }
+      tbody.innerHTML = '';
+      rows.forEach((cv, idx)=>{
+        const tr = document.createElement('tr');
+        const payed = String((cv.payed ?? cv.paye ?? cv.paid ?? '0')) === '1';
+        const ref = cv.reference ?? cv.reference_loi ?? cv.ref ?? '';
+        const rawDate = cv.date ?? cv.date_infraction ?? cv.dateContravention ?? '';
+        const dateDisp = window.formatDMY ? (window.formatDMY(rawDate) || '') : (rawDate || '');
+        const desc = cv.description ?? cv.type_infraction ?? cv.typeInfraction ?? '';
+        const montant = (cv.montant ?? cv.amende ?? cv.amount ?? 0);
+        const cid = (cv.id ?? cv.contravention_id ?? cv.id_contravention ?? cv.idContravention ?? '');
+        tr.innerHTML = `
+          <td>${idx+1}</td>
+          <td>${ref}</td>
+          <td>${dateDisp}</td>
+          <td>${desc}</td>
+          <td>${window.formatMoneyCDF ? (window.formatMoneyCDF(montant) || '') : montant}</td>
+          <td>
+            <div class="form-check form-switch m-0">
+              <input class="form-check-input pt-cv-payed" type="checkbox" data-cv-id="${cid}" ${payed ? 'checked' : ''}>
+              <span class="ms-2 pt-cv-payed-label">${payed ? 'Payé' : 'Non payé'}</span>
+            </div>
+          </td>
+          <td>
+            <button type="button" class="btn btn-sm btn-outline-primary view-pt-contrav-pdf" data-contrav-id="${cid}" title="Voir le PDF">
+              <i class="ri-eye-line"></i>
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    } catch(_) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Erreur réseau</td></tr>';
+    }
+  }
+
+  async function loadVehicules(){
+    const tbody = document.getElementById('pt_veh_tbody');
+    const countEl = document.getElementById('pt_veh_count');
+    const pid = modal.getAttribute('data-pt-id') || modal.getAttribute('data-id') || '';
+    if (!tbody || !pid) return;
+    try {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Chargement...</td></tr>';
+      const resp = await fetch(`/particulier/${encodeURIComponent(pid)}/vehicules`, { method: 'GET' });
+      const json = await resp.json().catch(()=>({ ok:false, data:[] }));
+      if (!json || json.ok !== true) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Erreur de chargement</td></tr>';
+        if (countEl) countEl.textContent = '0';
+        return;
+      }
+      const rows = Array.isArray(json.data) ? json.data : [];
+      if (countEl) countEl.textContent = String(rows.length);
+      if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Aucun véhicule</td></tr>';
+        return;
+      }
+      tbody.innerHTML = '';
+      rows.forEach((v, idx)=>{
+        const tr = document.createElement('tr');
+        const plaque = v.plaque || '';
+        const marque = v.marque || '';
+        const modele = v.modele || '';
+        const couleur = v.couleur || '';
+        const annee = v.annee || '';
+        const dateAssoc = v.date_assoc || v.dateAssoc || v.created_at || '';
+        const dateDisp = window.formatDMY ? (window.formatDMY(dateAssoc) || dateAssoc) : dateAssoc;
+        tr.innerHTML = `
+          <td>${idx+1}</td>
+          <td>${plaque}</td>
+          <td>${marque}${modele ? (' / ' + modele) : ''}</td>
+          <td>${couleur}</td>
+          <td>${annee}</td>
+          <td>${dateDisp || ''}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    } catch(_) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Erreur réseau</td></tr>';
+      if (countEl) countEl.textContent = '0';
+    }
   }
 
   function formatDMY(s){
@@ -38,6 +190,7 @@
 
   function processArrestRows(){
     const rows = Array.from(tbody.querySelectorAll('tr'));
+    let hasDetained = false;
     rows.forEach((tr)=>{
       const cells = tr.querySelectorAll('td');
       // Skip placeholder rows
@@ -52,15 +205,9 @@
       const rawSortie = (dateSortieCell?.textContent || '').trim();
       // Format date sortie
       if (dateSortieCell){ dateSortieCell.textContent = formatDMY(rawSortie); }
-      // Compute status
+      // Compute status: any non-empty date_sortie means Libéré
       let status = 'En détention', cls = 'bg-danger';
-      const d = parseISODate(rawSortie);
-      if (rawSortie && d){
-        const today = new Date(); today.setHours(0,0,0,0);
-        if (d.getTime() <= today.getTime()) { status = 'Libéré'; cls = 'bg-success'; }
-      } else if (!rawSortie) {
-        status = 'En détention'; cls = 'bg-danger';
-      }
+      if (rawSortie) { status = 'Libéré'; cls = 'bg-success'; } else { hasDetained = true; }
       if (statusCell){
         // If still detained, show action button to liberate this specific arrestation
         const showBtn = (status === 'En détention');
@@ -69,10 +216,18 @@
         statusCell.innerHTML = `<span class="badge ${cls}">${status}</span>${btnHtml}`;
       }
     });
+    // Toggle global 'Libérer' button depending on whether any row is still detained
+    try {
+      const gbtn = document.getElementById('pt_btn_liberer');
+      if (gbtn) {
+        if (hasDetained) { gbtn.classList.remove('d-none'); gbtn.disabled = false; }
+        else { gbtn.classList.add('d-none'); gbtn.disabled = true; }
+      }
+    } catch(_){}
   }
 
   async function loadArrestations(){
-    const pid = modal.getAttribute('data-pt-id');
+    const pid = modal.getAttribute('data-pt-id') || modal.getAttribute('data-id');
     if (!pid) return;
     try {
       const resp = await fetch(`/particulier/${encodeURIComponent(pid)}/arrestations`, { method: 'GET' });
@@ -110,7 +265,7 @@
   }
 
   // Re-process when modal is shown (rows likely injected just before)
-  modal.addEventListener('shown.bs.modal', ()=>{ loadArrestations(); });
+  modal.addEventListener('shown.bs.modal', ()=>{ loadArrestations(); loadContraventions(); loadPermisTemporaire(); loadVehicules(); });
   // Expose for other scripts if needed
   try {
     window.__processPtArrestRows = processArrestRows;
@@ -134,6 +289,49 @@
     if (e.target && e.target.getAttribute('data-bs-target') === '#pt-arrest') {
       loadArrestations();
     }
+    if (e.target && e.target.getAttribute('data-bs-target') === '#pt-cv') {
+      loadContraventions();
+    }
+    if (e.target && e.target.getAttribute('data-bs-target') === '#pt-infos') {
+      loadPermisTemporaire();
+      loadVehicules();
+    }
+  });
+
+  // Close active permis temporaire from the modal banner
+  if (btnClosePermis) {
+    btnClosePermis.addEventListener('click', async (ev)=>{
+      const id = btnClosePermis.getAttribute('data-permis-id')||''; if (!id) return;
+      if (!confirm('Confirmer la clôture de ce permis temporaire ?')) return;
+      try {
+        const resp = await fetch(`/permis-temporaire/${encodeURIComponent(id)}/close`, { method: 'POST' });
+        const data = await resp.json().catch(()=>({ ok:false }));
+        if (!resp.ok || !data || data.ok !== true) throw new Error((data && (data.error||data.message)) || 'Erreur serveur');
+        // Refresh banner
+        await loadPermisTemporaire();
+        alert('Permis temporaire clôturé.');
+      } catch(e) {
+        alert((e && e.message) || 'Erreur réseau');
+      }
+    });
+  }
+
+  // Expose refresh functions for external triggers (e.g., after creation)
+  try { window.__refreshPtPermis = loadPermisTemporaire; } catch(_) {}
+  try { window.__refreshPtVehicules = loadVehicules; } catch(_) {}
+
+  // PDF viewing handler for particulier contraventions (delegated)
+  document.addEventListener('click', function(e){
+    const btn = e.target.closest && e.target.closest('.view-pt-contrav-pdf');
+    if (!btn) return;
+    const contraventionId = btn.getAttribute('data-contrav-id');
+    if (!contraventionId) {
+      alert('ID de contravention manquant');
+      return;
+    }
+    // Open PDF in new window/tab
+    const pdfUrl = `/uploads/contraventions/contravention_${contraventionId}.pdf`;
+    window.open(pdfUrl, '_blank');
   });
 
   // Row click: select an arrestation (for using the bottom 'Libérer' button if needed)
@@ -268,66 +466,22 @@
                 </ul>
                 <div class="tab-content pt-3">
                     <div class="tab-pane fade show active" id="pt-infos" role="tabpanel" aria-labelledby="pt-infos-tab">
-                        <div class="mb-3 p-3 rounded-2 border bg-light">
-                            <div class="row g-3 align-items-center">
-                                <div class="col-md-6">
-                                    <div class="text-muted small">Nom</div>
-                                    <div class="fw-semibold fs-5"><span id="pt_nom"></span><span class="badge bg-danger ms-2 d-none" id="pt_arrest_badge">Arrêté</span></div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="text-muted small">N° National</div>
-                                    <div class="fw-semibold" id="pt_numero_national"></div>
-                                </div>
-                            </div>
+                        <div class="row g-2">
+                            <div class="col-md-6"><strong>Nom:</strong> <span id="pt_nom"></span> <span class="badge bg-danger ms-2 d-none" id="pt_arrest_badge">Arrêté</span></div>
+                            <div class="col-md-6"><strong>N° National:</strong> <span id="pt_numero_national"></span></div>
+                            <div class="col-md-6"><strong>Date de naissance:</strong> <span id="pt_date_naissance"></span></div>
+                            <div class="col-md-6"><strong>Genre:</strong> <span id="pt_genre"></span></div>
+                            <div class="col-md-6"><strong>État civil:</strong> <span id="pt_etat_civil"></span></div>
+                            <div class="col-md-6"><strong>Nationalité:</strong> <span id="pt_nationalite"></span></div>
+                            <div class="col-md-6"><strong>Téléphone:</strong> <span id="pt_gsm"></span></div>
+                            <div class="col-md-6"><strong>Email:</strong> <span id="pt_email"></span></div>
+                            <div class="col-md-6"><strong>Lieu de naissance:</strong> <span id="pt_lieu_naissance"></span></div>
+                            <div class="col-md-6"><strong>Profession:</strong> <span id="pt_profession"></span></div>
+                            <div class="col-12"><strong>Adresse:</strong> <span id="pt_adresse"></span></div>
+                            <div class="col-12"><strong>Observations:</strong> <span id="pt_observations"></span></div>
+                            <div class="col-md-4"><strong>Photo:</strong><br><img id="pt_photo" src="" alt="Photo" class="img-thumbnail d-none" style="max-height:120px"></div>
                         </div>
-                        <div class="row g-3">
-                            <div class="col-md-4">
-                                <div class="text-muted small">Date de naissance</div>
-                                <div class="fw-medium" id="pt_date_naissance"></div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="text-muted small">Genre</div>
-                                <div class="fw-medium" id="pt_genre"></div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="text-muted small">État civil</div>
-                                <div class="fw-medium" id="pt_etat_civil"></div>
-                            </div>
-                            <div class="col-12">
-                                <hr class="my-2">
-                            </div>
-                            <div class="col-12">
-                                <div class="text-muted small">Adresse</div>
-                                <div class="fw-medium" id="pt_adresse"></div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="text-muted small">Profession</div>
-                                <div class="fw-medium" id="pt_profession"></div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="text-muted small">Personne de contact</div>
-                                <div class="fw-medium" id="pt_personne_contact"></div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="text-muted small">Téléphone</div>
-                                <div class="fw-medium" id="pt_gsm"></div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="text-muted small">Email</div>
-                                <div class="fw-medium" id="pt_email"></div>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="text-muted small">Nationalité</div>
-                                <div class="fw-medium" id="pt_nationalite"></div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="text-muted small">Lieu de naissance</div>
-                                <div class="fw-medium" id="pt_lieu_naissance"></div>
-                            </div>
-                            <div class="col-12">
-                                <div class="text-muted small">Observations</div>
-                                <div class="fw-medium" id="pt_observations"></div>
-                            </div>
+                        <div class="row g-3 mt-3">
                             <div class="col-12">
                                 <div id="pt_avis_banner" class="alert alert-warning d-none d-flex align-items-center justify-content-between" role="alert">
                                     <div>
@@ -396,6 +550,7 @@
                                         <th>Description</th>
                                         <th>Montant</th>
                                         <th>Payé</th>
+                                        <th>PDF</th>
                                     </tr>
                                 </thead>
                                 <tbody id="pt_cv_tbody"></tbody>

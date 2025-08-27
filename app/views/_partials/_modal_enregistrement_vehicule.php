@@ -28,6 +28,30 @@
                                     </div>
                                 </div>
 
+                        <!-- Section Détails techniques (DGI) -->
+                        <div class="card mb-4">
+                            <div class="card-header bg-light">
+                                <h5 class="card-title mb-0"><i class="ri-settings-2-line me-2"></i>Détails techniques</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-4"><div class="mb-3"><label for="genre" class="form-label">Genre</label><input type="text" name="genre" id="genre" class="form-control"></div></div>
+                                    <div class="col-md-4"><div class="mb-3"><label for="usage" class="form-label">Usage</label><input type="text" name="usage" id="usage" class="form-control"></div></div>
+                                    <div class="col-md-4"><div class="mb-3"><label for="numero_declaration" class="form-label">Numéro de déclaration</label><input type="text" name="numero_declaration" id="numero_declaration" class="form-control"></div></div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-4"><div class="mb-3"><label for="num_moteur" class="form-label">Numéro moteur</label><input type="text" name="num_moteur" id="num_moteur" class="form-control"></div></div>
+                                    <div class="col-md-4"><div class="mb-3"><label for="origine" class="form-label">Origine</label><input type="text" name="origine" id="origine" class="form-control"></div></div>
+                                    <div class="col-md-4"><div class="mb-3"><label for="source" class="form-label">Source</label><input type="text" name="source" id="source" class="form-control"></div></div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-4"><div class="mb-3"><label for="annee_fab" class="form-label">Année fabrication</label><input type="text" name="annee_fab" id="annee_fab" class="form-control" placeholder="Ex: 2020"></div></div>
+                                    <div class="col-md-4"><div class="mb-3"><label for="annee_circ" class="form-label">Année mise en circulation</label><input type="text" name="annee_circ" id="annee_circ" class="form-control" placeholder="Ex: 2021"></div></div>
+                                    <div class="col-md-4"><div class="mb-3"><label for="type_em" class="form-label">Type émission</label><input type="text" name="type_em" id="type_em" class="form-control"></div></div>
+                                </div>
+                            </div>
+                        </div>
+
                                 <div class="row">
                                     <div class="col-md-6">
                                         <div class="mb-3">
@@ -35,10 +59,10 @@
                                             <input type="text" name="marque" id="marque" class="form-control" placeholder="Ex: Toyota, Peugeot, Mercedes..." required>
                                         </div>
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-3 d-none">
                                         <div class="mb-3">
-                                            <label for="annee" class="form-label">Année <span class="text-danger">*</span></label>
-                                            <input type="number" name="annee" id="annee" class="form-control" min="1900" max="2030" placeholder="2023" required>
+                                            <label for="annee" class="form-label">Année</label>
+                                            <input type="number" name="annee" id="annee" class="form-control" min="1900" max="2030" placeholder="2023">
                                         </div>
                                     </div>
                                     <div class="col-md-3">
@@ -84,7 +108,14 @@
                                     <div class="col-md-4">
                                         <div class="mb-3">
                                             <label for="plaque" class="form-label">Plaque d'immatriculation</label>
-                                            <input type="text" name="plaque" id="plaque" class="form-control" placeholder="Ex: AB-123-CD" style="text-transform: uppercase;">
+                                            <div class="input-group">
+                                                <input type="text" name="plaque" id="plaque" class="form-control" placeholder="Ex: AB-123-CD" style="text-transform: uppercase;">
+                                                <button class="btn btn-secondary" type="button" id="btn-fetch-plaque">
+                                                    <span class="spinner-border spinner-border-sm me-1 d-none" id="btn-fetch-spinner" role="status" aria-hidden="true"></span>
+                                                    Rechercher
+                                                </button>
+                                            </div>
+                                            <div class="form-text">Recherche locale; si non trouvé, interrogation DGI</div>
                                         </div>
                                     </div>
                                     <div class="col-md-4">
@@ -301,6 +332,89 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Afficher les erreurs de validation
                 vehiculeForm.reportValidity();
             }
+        });
+    }
+
+    // ----- Recherche plaque: DB d'abord, DGI ensuite -----
+    const btnFetch = document.getElementById('btn-fetch-plaque');
+    const btnSpinner = document.getElementById('btn-fetch-spinner');
+    const plaqueInput = document.getElementById('plaque');
+
+    async function fetchJson(url) {
+        const res = await fetch(url, { credentials: 'same-origin' });
+        const data = await res.json().catch(() => ({ ok:false, error:'Invalid JSON'}));
+        if (!res.ok) { throw new Error(data.error || ('HTTP ' + res.status)); }
+        return data;
+    }
+
+    function toggleBtnLoading(loading) {
+        if (!btnFetch) return;
+        if (loading) { btnFetch.setAttribute('disabled', 'disabled'); btnSpinner?.classList.remove('d-none'); }
+        else { btnFetch.removeAttribute('disabled'); btnSpinner?.classList.add('d-none'); }
+    }
+
+    function applyVehicleData(d) {
+        if (!d || typeof d !== 'object') return;
+        // DB rows vs external mapping
+        const map = {
+            plaque: ['plaque','num_plaque'],
+            marque: ['marque'],
+            modele: ['modele'],
+            annee: ['annee'], // ne plus alimenter depuis annee_fab pour éviter doublon visuel
+            couleur: ['couleur'],
+            numero_chassis: ['numero_chassis','num_chassis'],
+            genre: ['genre'],
+            usage: ['usage'],
+            numero_declaration: ['numero_declaration'],
+            num_moteur: ['num_moteur'],
+            origine: ['origine'],
+            source: ['source'],
+            annee_fab: ['annee_fab'],
+            annee_circ: ['annee_circ'],
+            type_em: ['type_em']
+        };
+        for (const [field, keys] of Object.entries(map)) {
+            const el = document.getElementById(field);
+            if (!el) continue;
+            for (const k of keys) {
+                if (d[k] !== undefined && d[k] !== null && String(d[k]).trim() !== '') { el.value = String(d[k]).trim(); break; }
+            }
+        }
+    }
+
+    async function searchLocalThenExternal(plate) {
+        if (!plate) return;
+        try {
+            toggleBtnLoading(true);
+            const local = await fetchJson(`/api/vehicules/search?plate=${encodeURIComponent(plate)}`);
+            if (local.ok && Array.isArray(local.data) && local.data.length > 0) {
+                applyVehicleData(local.data[0]);
+                return;
+            }
+            const ext = await fetchJson(`/api/vehicules/fetch-externe?plate=${encodeURIComponent(plate)}`);
+            if (ext.ok && ext.data) {
+                applyVehicleData(ext.data);
+                if (!plaqueInput.value) plaqueInput.value = plate.toUpperCase();
+            } else {
+                showError(ext.error || 'Aucune donnée trouvée');
+            }
+        } catch (err) {
+            showError(err.message || 'Erreur lors de la recherche de la plaque');
+        } finally {
+            toggleBtnLoading(false);
+        }
+    }
+
+    if (btnFetch && plaqueInput) {
+        btnFetch.addEventListener('click', function(){
+            const plate = (plaqueInput.value || '').trim();
+            if (!plate) { showError('Veuillez saisir une plaque'); return; }
+            searchLocalThenExternal(plate);
+        });
+        // Optionnel: déclenchement sur perte de focus
+        plaqueInput.addEventListener('blur', function(){
+            const plate = (plaqueInput.value || '').trim();
+            if (plate) { searchLocalThenExternal(plate); }
         });
     }
 });

@@ -46,6 +46,23 @@ $router->map('GET','/',function (){
     }
 });
 
+// API: récupérer les infos véhicule depuis le site DGI si non trouvé en DB
+$router->map('GET','/api/vehicules/fetch-externe', function(){
+    // Réponse JSON propre
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $plate = isset($_GET['plate']) ? trim((string)$_GET['plate']) : '';
+        if ($plate === '') { ob_clean(); http_response_code(400); echo json_encode(['ok'=>false,'error'=>'Paramètre plate manquant']); return; }
+        $ctrl = new VehiculePlaqueController();
+        $res = $ctrl->fetchFromExternal($plate);
+        ob_clean(); echo json_encode($res);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Server error']);
+    }
+});
+
 // API: Remettre un véhicule en circulation (met en_circulation=1)
 $router->map('POST','/vehicule/[i:id]/remettre', function($id){
     // JSON clean response
@@ -639,13 +656,16 @@ $router->map('GET','/consulter-dossier',function (){
         $vehData = $dossierController->getVehiculesWithContraventions();
         $vehicules = $vehData['vehicules'] ?? [];
         $contraventionsByVehicule = $vehData['contraventionsByVehicule'] ?? [];
-        // Préparer la liste des particuliers
+        // Préparer la liste des particuliers (paginée)
         $partCtrl = new ParticulierController();
-        $particuliers = $partCtrl->listAll();
+        $partData = $partCtrl->listAllPaginated();
+        $particuliers = $partData['particuliers'] ?? [];
+        $part_pagination = $partData['part_pagination'] ?? null;
         // Préparer les entreprises et leurs contraventions
         $entData = $dossierController->getEntreprisesWithContraventions();
         $entreprises = $entData['entreprises'] ?? [];
         $contraventionsByEntreprise = $entData['contraventionsByEntreprise'] ?? [];
+        $ent_pagination = $entData['ent_pagination'] ?? null;
         
         require_once 'views/consulter-dossier2.php';
     } else {
@@ -697,12 +717,20 @@ $router->map('GET','/particulier/[i:id]/contraventions', function($id){
     try {
         // Use the provided ID directly; mapping by numero_national is unnecessary here
         $dossierId = (string)$id;
+        $numero = isset($_GET['numero']) ? (string)$_GET['numero'] : '';
         $ctrl = new \Control\ContraventionController();
         $rows = $ctrl->getByDossierIdAndType($dossierId, 'particuliers');
+        // Fallback legacy: some records may have stored dossier_id as numero_national
+        if ((!is_array($rows) || count($rows) === 0) && $numero !== '') {
+            $legacy = $ctrl->getByDossierIdAndType($numero, 'particuliers');
+            if (is_array($legacy) && count($legacy) > 0) {
+                $rows = $legacy;
+            }
+        }
         echo json_encode(['ok'=>true,'data'=>$rows]);
     } catch (\Throwable $e) {
         http_response_code(500);
-        echo json_encode(['ok'=>false,'error'=>'Server error']);
+        echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
     }
 });
 

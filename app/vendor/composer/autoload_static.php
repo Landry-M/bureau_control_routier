@@ -4,12 +4,17 @@
 
 namespace Composer\Autoload;
 
-class ComposerStaticInit5918e151538467009a3f0d0bcabc78bb
+class ComposerStaticInit3e414ea854a127d7fb09b15b753f6a2a
 {
     public static $prefixLengthsPsr4 = array (
         'V' => 
         array (
             'Views\\' => 6,
+        ),
+        'S' => 
+        array (
+            'Svg\\' => 4,
+            'Sabberworm\\CSS\\' => 15,
         ),
         'P' => 
         array (
@@ -18,6 +23,15 @@ class ComposerStaticInit5918e151538467009a3f0d0bcabc78bb
         'M' => 
         array (
             'Model\\' => 6,
+            'Masterminds\\' => 12,
+        ),
+        'F' => 
+        array (
+            'FontLib\\' => 8,
+        ),
+        'D' => 
+        array (
+            'Dompdf\\' => 7,
         ),
         'C' => 
         array (
@@ -30,6 +44,14 @@ class ComposerStaticInit5918e151538467009a3f0d0bcabc78bb
         array (
             0 => __DIR__ . '/../..' . '/views',
         ),
+        'Svg\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/dompdf/php-svg-lib/src/Svg',
+        ),
+        'Sabberworm\\CSS\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/sabberworm/php-css-parser/src',
+        ),
         'PHPMailer\\PHPMailer\\' => 
         array (
             0 => __DIR__ . '/..' . '/phpmailer/phpmailer/src',
@@ -37,6 +59,18 @@ class ComposerStaticInit5918e151538467009a3f0d0bcabc78bb
         'Model\\' => 
         array (
             0 => __DIR__ . '/../..' . '/model',
+        ),
+        'Masterminds\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/masterminds/html5/src',
+        ),
+        'FontLib\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/dompdf/php-font-lib/src/FontLib',
+        ),
+        'Dompdf\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/dompdf/dompdf/src',
         ),
         'Control\\' => 
         array (
@@ -47,6 +81,7 @@ class ComposerStaticInit5918e151538467009a3f0d0bcabc78bb
     public static $classMap = array (
         'AltoRouter' => __DIR__ . '/..' . '/altorouter/altorouter/AltoRouter.php',
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
+        'Dompdf\\Cpdf' => __DIR__ . '/..' . '/dompdf/dompdf/lib/Cpdf.php',
         'IdiormMethodMissingException' => __DIR__ . '/..' . '/j4mie/idiorm/idiorm.php',
         'IdiormResultSet' => __DIR__ . '/..' . '/j4mie/idiorm/idiorm.php',
         'IdiormString' => __DIR__ . '/..' . '/j4mie/idiorm/idiorm.php',
@@ -57,9 +92,9 @@ class ComposerStaticInit5918e151538467009a3f0d0bcabc78bb
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInit5918e151538467009a3f0d0bcabc78bb::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInit5918e151538467009a3f0d0bcabc78bb::$prefixDirsPsr4;
-            $loader->classMap = ComposerStaticInit5918e151538467009a3f0d0bcabc78bb::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInit3e414ea854a127d7fb09b15b753f6a2a::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit3e414ea854a127d7fb09b15b753f6a2a::$prefixDirsPsr4;
+            $loader->classMap = ComposerStaticInit3e414ea854a127d7fb09b15b753f6a2a::$classMap;
 
         }, null, ClassLoader::class);
     }

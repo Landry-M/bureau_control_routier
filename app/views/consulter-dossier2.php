@@ -104,6 +104,24 @@
                                                                 <option value="permis_desc">Permis Z→A</option>
                                                             </select>
                                                         </div>
+                                                    <script>
+                                                    (function(){
+                                                        const sel = document.getElementById('part-per-page');
+                                                        if (sel) {
+                                                            sel.addEventListener('change', function(){
+                                                                try {
+                                                                    const params = new URLSearchParams(window.location.search);
+                                                                    params.set('part_per_page', String(this.value));
+                                                                    params.set('part_page', '1');
+                                                                    const base = window.location.pathname;
+                                                                    window.location.href = base + '?' + params.toString() + '#particuliers';
+                                                                } catch (e) {
+                                                                    window.location.hash = '#particuliers';
+                                                                }
+                                                            });
+                                                        }
+                                                    })();
+                                                    </script>
                                                     </div>
                                                     <div class="card-body p-0">
                                                         <div class="table-responsive">
@@ -162,7 +180,75 @@
                                                                 </tbody>
                                                             </table>
                                                         </div>
+                                                        <?php 
+                                                        // Pagination controls
+                                                        $pg = isset($ent_pagination) && is_array($ent_pagination) ? $ent_pagination : null;
+                                                        if ($pg) {
+                                                            $p = (int)($pg['page'] ?? 1);
+                                                            $pp = (int)($pg['per_page'] ?? 20);
+                                                            $tp = (int)($pg['total_pages'] ?? 1);
+                                                            $tot = (int)($pg['total'] ?? 0);
+                                                            $prev = max(1, $p - 1);
+                                                            $next = min($tp, $p + 1);
+                                                            // Build URL helper preserving existing query but adjusting ent_page/per_page
+                                                            $baseUrl = strtok($_SERVER['REQUEST_URI'], '#');
+                                                            $qs = $_GET;
+                                                            $qs['ent_per_page'] = $pp;
+                                                            $qsPrev = $qs; $qsPrev['ent_page'] = $prev;
+                                                            $qsNext = $qs; $qsNext['ent_page'] = $next;
+                                                            $qsFirst = $qs; $qsFirst['ent_page'] = 1;
+                                                            $qsLast = $qs; $qsLast['ent_page'] = $tp;
+                                                            $mk = function($arr){ return htmlspecialchars($_SERVER['PHP_SELF'] . '?' . http_build_query($arr) . '#entreprises'); };
+                                                        ?>
+                                                        <div class="d-flex align-items-center justify-content-between p-2 border-top flex-wrap gap-2">
+                                                            <div class="small text-muted">
+                                                                Page <strong><?php echo $p; ?></strong> / <?php echo $tp; ?> ·
+                                                                Affichées <strong><?php echo count($entreprises); ?></strong> sur <strong><?php echo $tot; ?></strong>
+                                                            </div>
+                                                            <div class="btn-group btn-group-sm" role="group">
+                                                                <a class="btn btn-light <?php echo $p<=1?'disabled':''; ?>" href="<?php echo $mk($qsFirst); ?>">« Première</a>
+                                                                <a class="btn btn-light <?php echo $p<=1?'disabled':''; ?>" href="<?php echo $mk($qsPrev); ?>">‹ Précédent</a>
+                                                                <?php 
+                                                                // Numérotation des pages (fenêtre autour de la page courante)
+                                                                $winE = 2; 
+                                                                $startE = max(1, $p - $winE);
+                                                                $endE = min($tp, $p + $winE);
+                                                                if ($endE - $startE < $winE*2) {
+                                                                    $missingE = $winE*2 - ($endE - $startE);
+                                                                    $startE = max(1, $startE - $missingE);
+                                                                    $endE = min($tp, $endE + ($winE*2 - ($endE - $startE)));
+                                                                }
+                                                                for ($ei=$startE; $ei<=$endE; $ei++) {
+                                                                    $qse = $qs; $qse['ent_page'] = $ei;
+                                                                    $activeE = $ei === $p ? 'active' : '';
+                                                                    echo '<a class="btn btn-light '.$activeE.'" href="'.$mk($qse).'">'.$ei.'</a>';
+                                                                }
+                                                                ?>
+                                                                <a class="btn btn-light <?php echo $p>=$tp?'disabled':''; ?>" href="<?php echo $mk($qsNext); ?>">Suivant ›</a>
+                                                                <a class="btn btn-light <?php echo $p>=$tp?'disabled':''; ?>" href="<?php echo $mk($qsLast); ?>">Dernière »</a>
+                                                            </div>
+                                                        </div>
+                                                        <?php } ?>
                                                     </div>
+                                                    <script>
+                                                    (function(){
+                                                        const sel = document.getElementById('ent-per-page');
+                                                        if (sel) {
+                                                            sel.addEventListener('change', function(){
+                                                                try {
+                                                                    const params = new URLSearchParams(window.location.search);
+                                                                    params.set('ent_per_page', String(this.value));
+                                                                    params.set('ent_page', '1');
+                                                                    const base = window.location.pathname;
+                                                                    window.location.href = base + '?' + params.toString() + '#entreprises';
+                                                                } catch (e) {
+                                                                    // Fallback minimal
+                                                                    window.location.hash = '#entreprises';
+                                                                }
+                                                            });
+                                                        }
+                                                    })();
+                                                    </script>
                                                 </div>
 
         <!-- Modal: Associer un véhicule -->
@@ -725,7 +811,7 @@
                                                                     <tr>
                                                                         <th style="width:60px;">#</th>
                                                                         <th>Marque</th>
-                                                                        <th>Année</th>
+                                                                        <th>Année fabrication</th>
                                                                         <th>Couleur</th>
                                                                         <th>Plaque</th>
                                                                         <th>Valide le</th>
@@ -747,14 +833,15 @@
                                                                                 }
                                                                             }
                                                                         ?>
-                                                                        <tr data-veh-id="<?php echo htmlspecialchars($v['id']); ?>" data-assu-exp="<?php echo htmlspecialchars($v['date_expire_assurance'] ?? ''); ?>" data-plaque-exp="<?php echo htmlspecialchars($v['plaque_expire_le'] ?? ''); ?>" data-veh-images="<?php echo htmlspecialchars($v['images'] ?? '[]', ENT_QUOTES, 'UTF-8'); ?>" data-frontiere-entree="<?php echo htmlspecialchars($v['frontiere_entree'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-date-importation="<?php echo htmlspecialchars($v['date_importation'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-en-circulation="<?php echo htmlspecialchars(isset($v['en_circulation']) ? (string)$v['en_circulation'] : '1'); ?>">
+                                                                        <tr data-veh-id="<?php echo htmlspecialchars($v['id']); ?>" data-assu-exp="<?php echo htmlspecialchars($v['date_expire_assurance'] ?? ''); ?>" data-plaque-exp="<?php echo htmlspecialchars($v['plaque_expire_le'] ?? ''); ?>" data-veh-images="<?php echo htmlspecialchars($v['images'] ?? '[]', ENT_QUOTES, 'UTF-8'); ?>" data-frontiere-entree="<?php echo htmlspecialchars($v['frontiere_entree'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-date-importation="<?php echo htmlspecialchars($v['date_importation'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-en-circulation="<?php echo htmlspecialchars(isset($v['en_circulation']) ? (string)$v['en_circulation'] : '1'); ?>" data-genre="<?php echo htmlspecialchars($v['genre'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-usage="<?php echo htmlspecialchars($v['usage'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-numero-declaration="<?php echo htmlspecialchars($v['numero_declaration'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-num-moteur="<?php echo htmlspecialchars($v['num_moteur'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-origine="<?php echo htmlspecialchars($v['origine'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-source="<?php echo htmlspecialchars($v['source'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-annee-fab="<?php echo htmlspecialchars($v['annee_fab'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-annee-circ="<?php echo htmlspecialchars($v['annee_circ'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-type-em="<?php echo htmlspecialchars($v['type_em'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-plaque-temp="<?php echo htmlspecialchars(isset($v['plaque_temporaire']) ? (string)$v['plaque_temporaire'] : '0', ENT_QUOTES, 'UTF-8'); ?>" data-plaque-temp-num="<?php echo htmlspecialchars($v['numero_plaque_temp'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-plaque-temp-du="<?php echo htmlspecialchars($v['plaque_temp_valide_du'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-plaque-temp-au="<?php echo htmlspecialchars($v['plaque_temp_valide_au'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                                                             <td><?php echo $idxv++; ?></td>
                                                                             <td class="veh2-marque"><?php echo htmlspecialchars($v['marque'] ?? ''); ?></td>
-                                                                            <td class="veh2-annee"><?php echo htmlspecialchars($v['annee'] ?? ''); ?></td>
+                                                                            <td class="veh2-annee-fab"><?php echo htmlspecialchars($v['annee_fab'] ?? ''); ?></td>
                                                                             <td class="veh2-couleur"><?php echo htmlspecialchars($v['couleur'] ?? ''); ?></td>
                                                                             <td class="veh2-plaque"><?php echo htmlspecialchars($v['plaque'] ?? ''); ?>
-                                                                                <span class="badge bg-warning text-dark ms-2 veh2-temp-badge" style="display:none;" title="Plaque temporaire" data-bs-toggle="tooltip">Plaque temporaire</span>
-                                                                                <button type="button" class="btn btn-sm btn-outline-danger ms-1 veh2-temp-close" style="display:none;" title="Clôturer la plaque temporaire" data-bs-toggle="tooltip">Fermer</button>
+                                                                                <?php $__hasTemp = !empty($v['plaque_temporaire']); ?>
+                                                                                <span class="badge bg-warning text-dark ms-2 veh2-temp-badge" style="display: <?php echo ($__hasTemp ? '' : 'none'); ?>;" title="Plaque temporaire" data-bs-toggle="tooltip">Plaque temporaire</span>
+                                                                                <button type="button" class="btn btn-sm btn-outline-danger ms-1 veh2-temp-close" style="display: <?php echo ($__hasTemp ? '' : 'none'); ?>;" title="Clôturer la plaque temporaire" data-bs-toggle="tooltip">Fermer</button>
                                                                             </td>
                                                                             <td class="veh2-valide"><?php
                                                                                 $valPlaque = trim((string)($v['plaque_valide_le'] ?? ''));
@@ -809,6 +896,54 @@
                                                                 </tbody>
                                                             </table>
                                                         </div>
+                                                        <?php 
+                                                        // Pagination Particuliers
+                                                        $pgp = isset($part_pagination) && is_array($part_pagination) ? $part_pagination : null;
+                                                        if ($pgp) {
+                                                            $ppage = (int)($pgp['page'] ?? 1);
+                                                            $pper = (int)($pgp['per_page'] ?? 20);
+                                                            $ptp = (int)($pgp['total_pages'] ?? 1);
+                                                            $ptot = (int)($pgp['total'] ?? 0);
+                                                            $pprev = max(1, $ppage - 1);
+                                                            $pnext = min($ptp, $ppage + 1);
+                                                            $qs2 = $_GET;
+                                                            $qs2['part_per_page'] = $pper;
+                                                            $qs2First = $qs2; $qs2First['part_page'] = 1;
+                                                            $qs2Prev  = $qs2; $qs2Prev['part_page']  = $pprev;
+                                                            $qs2Next  = $qs2; $qs2Next['part_page']  = $pnext;
+                                                            $qs2Last  = $qs2; $qs2Last['part_page']  = $ptp;
+                                                            $mkp = function($arr){ return htmlspecialchars($_SERVER['PHP_SELF'] . '?' . http_build_query($arr) . '#particuliers'); };
+                                                        ?>
+                                                        <div class="d-flex align-items-center justify-content-between p-2 border-top flex-wrap gap-2">
+                                                            <div class="small text-muted">
+                                                                Page <strong><?php echo $ppage; ?></strong> / <?php echo $ptp; ?> ·
+                                                                Affichées <strong><?php echo count($particuliers); ?></strong> sur <strong><?php echo $ptot; ?></strong>
+                                                            </div>
+                                                            <div class="btn-group btn-group-sm" role="group">
+                                                                <a class="btn btn-light <?php echo $ppage<=1?'disabled':''; ?>" href="<?php echo $mkp($qs2First); ?>">« Première</a>
+                                                                <a class="btn btn-light <?php echo $ppage<=1?'disabled':''; ?>" href="<?php echo $mkp($qs2Prev); ?>">‹ Précédent</a>
+                                                                <?php 
+                                                                // Numérotation des pages (fenêtre autour de la page courante)
+                                                                $win = 2; // 2 de chaque côté => fenêtre de 5
+                                                                $start = max(1, $ppage - $win);
+                                                                $end = min($ptp, $ppage + $win);
+                                                                // Ajuster pour toujours afficher 5 si possible
+                                                                if ($end - $start < $win*2) {
+                                                                    $missing = $win*2 - ($end - $start);
+                                                                    $start = max(1, $start - $missing);
+                                                                    $end = min($ptp, $end + ($win*2 - ($end - $start)));
+                                                                }
+                                                                for ($i=$start; $i<=$end; $i++) {
+                                                                    $qsi = $qs2; $qsi['part_page'] = $i;
+                                                                    $active = $i === $ppage ? 'active' : '';
+                                                                    echo '<a class="btn btn-light '.$active.'" href="'.$mkp($qsi).'">'.$i.'</a>';
+                                                                }
+                                                                ?>
+                                                                <a class="btn btn-light <?php echo $ppage>=$ptp?'disabled':''; ?>" href="<?php echo $mkp($qs2Next); ?>">Suivant ›</a>
+                                                                <a class="btn btn-light <?php echo $ppage>=$ptp?'disabled':''; ?>" href="<?php echo $mkp($qs2Last); ?>">Dernière »</a>
+                                                            </div>
+                                                        </div>
+                                                        <?php } ?>
                                                     </div>
                                                 </div>
 
@@ -833,15 +968,27 @@
                                                                     <div class="tab-pane fade show active" id="veh2-info" role="tabpanel">
                                                                         <div class="row g-2">
                                                                             <div class="col-md-6"><strong>Marque:</strong> <span id="md2-marque"></span></div>
-                                                                            <div class="col-md-3"><strong>Année:</strong> <span id="md2-annee"></span></div>
+                                                                            <div class="col-md-3 d-none"><strong>Année:</strong> <span id="md2-annee"></span></div>
                                                                             <div class="col-md-3"><strong>Couleur:</strong> <span id="md2-couleur"></span></div>
                                                                             <div class="col-md-4"><strong>Plaque:</strong> <span id="md2-plaque"></span></div>
-                                                                            <div class="col-md-4"><strong>Valide le:</strong> <span id="md2-valide"></span></div>
-                                                                            <div class="col-md-4"><strong>Expire le:</strong> <span id="md2-expire"></span></div>
+                                                                            <div class="col-md-12"><strong>Plaque temporaire:</strong> <span id="md2-temp-num"></span></div>
+                                                                            <div class="col-md-4"><strong>Valide du:</strong> <span id="md2-valide"></span></div>
+                                                                            <div class="col-md-4"><strong>Au:</strong> <span id="md2-expire"></span></div>
                                                                             <div class="col-md-6"><strong>Statut de circulation:</strong> <span id="md2-circulation" class="badge"></span></div>
                                                                             <div class="col-md-6"><strong>Frontière d'entrée:</strong> <span id="md2-frontiere"></span></div>
                                                                             <div class="col-md-6"><strong>Date d'importation:</strong> <span id="md2-date-import"></span></div>
                                                                             <div class="col-12"><strong>Assurance:</strong> <span id="md2-assu"></span></div>
+                                                                            <div class="col-12"><hr class="my-2"/></div>
+                                                                            <div class="col-12"><strong>Détails techniques</strong></div>
+                                                                            <div class="col-md-4"><strong>Genre:</strong> <span id="md2-genre"></span></div>
+                                                                            <div class="col-md-4"><strong>Usage:</strong> <span id="md2-usage"></span></div>
+                                                                            <div class="col-md-4"><strong>N° déclaration:</strong> <span id="md2-numero-declaration"></span></div>
+                                                                            <div class="col-md-4"><strong>N° moteur:</strong> <span id="md2-num-moteur"></span></div>
+                                                                            <div class="col-md-4"><strong>Origine:</strong> <span id="md2-origine"></span></div>
+                                                                            <div class="col-md-4"><strong>Source:</strong> <span id="md2-source"></span></div>
+                                                                            <div class="col-md-4"><strong>Année fabrication:</strong> <span id="md2-annee-fab"></span></div>
+                                                                            <div class="col-md-4"><strong>Année 1ère circ.:</strong> <span id="md2-annee-circ"></span></div>
+                                                                            <div class="col-md-4"><strong>Type émission:</strong> <span id="md2-type-em"></span></div>
                                                                         </div>
                                                                         <hr/>
                                                                         <div>
@@ -862,6 +1009,7 @@
                                                                                         <th>Amende</th>
                                                                                         <th>Description</th>
                                                                                         <th>Payé</th>
+                                                                                        <th>PDF</th>
                                                                                     </tr>
                                                                                 </thead>
                                                                                 <tbody></tbody>
@@ -910,9 +1058,14 @@
                                                     }
                                                     function setText(id, value){ const el = document.getElementById(id); if (el) el.textContent = value || ''; }
                                                     function clearVehDetails(){
-                                                      setText('md2-marque',''); setText('md2-annee',''); setText('md2-couleur',''); setText('md2-plaque','');
+                                                      setText('md2-marque',''); setText('md2-couleur',''); setText('md2-plaque','');
                                                       setText('md2-valide',''); setText('md2-expire',''); setText('md2-frontiere',''); setText('md2-date-import',''); setText('md2-assu','');
                                                       setText('md2-circulation','');
+                                                      // Technical details
+                                                      setText('md2-genre',''); setText('md2-usage',''); setText('md2-numero-declaration',''); setText('md2-num-moteur','');
+                                                      setText('md2-origine',''); setText('md2-source',''); setText('md2-annee-fab',''); setText('md2-annee-circ',''); setText('md2-type-em','');
+                                                      // Temp plate fields
+                                                      setText('md2-temp-num','');
                                                       try { const b = document.getElementById('md2-circulation'); if (b) b.className = 'badge'; } catch {}
                                                       const imgs = document.getElementById('md2-images'); if (imgs) imgs.innerHTML = '';
                                                       const tbody = document.querySelector('#table-veh2-contravs tbody'); if (tbody) tbody.innerHTML = '';
@@ -921,7 +1074,7 @@
                                                       const tbody = document.querySelector('#table-veh2-contravs tbody');
                                                       if (!tbody) return;
                                                       const arr = Array.isArray(items) ? items : [];
-                                                      if (arr.length === 0){ tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Aucune contravention</td></tr>'; return; }
+                                                      if (arr.length === 0){ tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">Aucune contravention</td></tr>'; return; }
                                                       const fmtDate = (d)=>{
                                                         if (!d) return '';
                                                         try { const ts = Date.parse(d); if (!isNaN(ts)){ const dt = new Date(ts); const dd = String(dt.getDate()).padStart(2,'0'); const mm = String(dt.getMonth()+1).padStart(2,'0'); const yy = dt.getFullYear(); return `${dd}-${mm}-${yy}`; } } catch {}
@@ -951,6 +1104,11 @@
                                                               <label class="form-check-label small">${isPayed ? 'Payé' : 'Non payé'}</label>
                                                             </div>
                                                           </td>
+                                                          <td>
+                                                            <button type="button" class="btn btn-sm btn-outline-primary view-contrav-pdf" data-contrav-id="${String(id)}" title="Voir le PDF">
+                                                              <i class="ri-eye-line"></i>
+                                                            </button>
+                                                          </td>
                                                         </tr>`;
                                                       });
                                                       tbody.innerHTML = html;
@@ -959,7 +1117,7 @@
                                                       return String(s).replace(/[&<>"']/g, function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]); });
                                                     }
                                                     async function loadVehContravs(vehId){
-                                                      const tbody = document.querySelector('#table-veh2-contravs tbody'); if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Chargement...</td></tr>';
+                                                      const tbody = document.querySelector('#table-veh2-contravs tbody'); if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">Chargement...</td></tr>';
                                                       if (!vehId){ renderVehContravs([]); return; }
                                                       try {
                                                         const r = await fetch(`/vehicule/${encodeURIComponent(vehId)}/contraventions`);
@@ -972,24 +1130,57 @@
                                                       if (!tr) return;
                                                       // Basic fields from cells
                                                       const marque = tr.querySelector('.veh2-marque')?.textContent?.trim() || '';
-                                                      const annee = tr.querySelector('.veh2-annee')?.textContent?.trim() || '';
                                                       const couleur = tr.querySelector('.veh2-couleur')?.textContent?.trim() || '';
-                                                      const plaque = tr.querySelector('.veh2-plaque')?.textContent?.trim() || '';
+                                                      let plaque = '';
+                                                      try {
+                                                        const plaqueEl = tr.querySelector('.veh2-plaque');
+                                                        if (plaqueEl){
+                                                          // Prefer the first text node (before badges/buttons)
+                                                          const first = Array.from(plaqueEl.childNodes).find(n=> n.nodeType === Node.TEXT_NODE);
+                                                          plaque = (first ? first.textContent : plaqueEl.textContent || '').trim();
+                                                        }
+                                                      } catch { plaque = tr.querySelector('.veh2-plaque')?.textContent?.trim() || ''; }
                                                       const valide = tr.querySelector('.veh2-valide')?.textContent?.trim() || '';
                                                       const expire = tr.querySelector('.veh2-expire')?.textContent?.trim() || '';
                                                       const assu = tr.querySelector('.veh2-assu')?.textContent?.trim() || '';
                                                       // Extra fields from data-*
                                                       const frontiere = tr.getAttribute('data-frontiere-entree') || '';
                                                       const dateImp = tr.getAttribute('data-date-importation') || '';
+                                                      // Technical fields from data-*
+                                                      const genre = tr.getAttribute('data-genre') || '';
+                                                      const usage = tr.getAttribute('data-usage') || '';
+                                                      const numDecl = tr.getAttribute('data-numero-declaration') || '';
+                                                      const numMot = tr.getAttribute('data-num-moteur') || '';
+                                                      const origine = tr.getAttribute('data-origine') || '';
+                                                      const source = tr.getAttribute('data-source') || '';
+                                                      const anFab = tr.getAttribute('data-annee-fab') || '';
+                                                      const anCirc = tr.getAttribute('data-annee-circ') || '';
+                                                      const typeEm = tr.getAttribute('data-type-em') || '';
                                                       setText('md2-marque', marque);
-                                                      setText('md2-annee', annee);
                                                       setText('md2-couleur', couleur);
                                                       setText('md2-plaque', plaque);
-                                                      setText('md2-valide', (window.formatDMY? window.formatDMY(valide): valide));
-                                                      setText('md2-expire', (window.formatDMY? window.formatDMY(expire): expire));
+                                                      // Do not set md2-valide/md2-expire from non-temp fields
                                                       setText('md2-frontiere', frontiere);
                                                       setText('md2-date-import', (window.formatDMY? window.formatDMY(dateImp): dateImp));
                                                       setText('md2-assu', assu);
+                                                      // Temp plate
+                                                      const tempNum = tr.getAttribute('data-plaque-temp-num') || '';
+                                                      const hasTemp = ((tr.getAttribute('data-plaque-temp') || '') === '1') || (tempNum !== '');
+                                                      const tempDu = tr.getAttribute('data-plaque-temp-du') || '';
+                                                      const tempAu = tr.getAttribute('data-plaque-temp-au') || '';
+                                                      setText('md2-temp-num', hasTemp ? tempNum : 'N/A');
+                                                      setText('md2-valide', hasTemp ? ((window.formatDMY? window.formatDMY(tempDu): tempDu) || 'N/A') : 'N/A');
+                                                      setText('md2-expire', hasTemp ? ((window.formatDMY? window.formatDMY(tempAu): tempAu) || 'N/A') : 'N/A');
+                                                      // Set technical details
+                                                      setText('md2-genre', genre);
+                                                      setText('md2-usage', usage);
+                                                      setText('md2-numero-declaration', numDecl);
+                                                      setText('md2-num-moteur', numMot);
+                                                      setText('md2-origine', origine);
+                                                      setText('md2-source', source);
+                                                      setText('md2-annee-fab', anFab);
+                                                      setText('md2-annee-circ', anCirc);
+                                                      setText('md2-type-em', typeEm);
                                                       // Circulation status
                                                       const enCirc = (tr.getAttribute('data-en-circulation') || '').trim();
                                                       const isOut = (enCirc === '0' || enCirc.toLowerCase() === 'false');
@@ -1069,6 +1260,20 @@
                                                       } finally {
                                                         input.disabled = false;
                                                       }
+                                                    });
+
+                                                    // PDF viewing handler for contraventions (delegated)
+                                                    document.addEventListener('click', function(e){
+                                                      const btn = e.target.closest && e.target.closest('.view-contrav-pdf');
+                                                      if (!btn) return;
+                                                      const contraventionId = btn.getAttribute('data-contrav-id');
+                                                      if (!contraventionId) {
+                                                        alert('ID de contravention manquant');
+                                                        return;
+                                                      }
+                                                      // Open PDF in new window/tab
+                                                      const pdfUrl = `/uploads/contraventions/contravention_${contraventionId}.pdf`;
+                                                      window.open(pdfUrl, '_blank');
                                                     });
 
                                                     // Filtre et tri pour la table Véhicules
@@ -1662,6 +1867,22 @@
                                                       try{ bootstrap.Modal.getOrCreateInstance(document.getElementById('plaqueTempModal')).hide(); }catch{}
                                                       // Refresh badge state on the corresponding row
                                                       refreshVehTempBadge(vehId);
+                                                      // Téléchargement automatique du PDF si disponible
+                                                      try {
+                                                        const pdfUrl = j.pdf || null;
+                                                        if (pdfUrl) {
+                                                          // Tenter un vrai téléchargement
+                                                          const a = document.createElement('a');
+                                                          a.href = pdfUrl;
+                                                          a.target = '_blank';
+                                                          if (j.filename) { a.download = j.filename; }
+                                                          document.body.appendChild(a);
+                                                          a.click();
+                                                          a.remove();
+                                                          // Fallback immédiat: ouvrir dans un nouvel onglet pour garantir la visibilité tout en gardant le contexte du clic
+                                                          try { window.open(pdfUrl, '_blank'); } catch {}
+                                                        }
+                                                      } catch {}
                                                     }
                                                     else {
                                                       // Afficher le message précis côté backend si disponible
@@ -1693,6 +1914,13 @@
                                                                 <option value="num_asc">N° national A→Z</option>
                                                                 <option value="num_desc">N° national Z→A</option>
                                                             </select>
+                                                            <?php $currPPP = isset($part_pagination['per_page']) ? (int)$part_pagination['per_page'] : 20; ?>
+                                                            <select id="part-per-page" class="form-select form-select-sm" title="Par page" style="min-width:140px;">
+                                                                <option value="10" <?php echo $currPPP===10?'selected':''; ?>>10 / page</option>
+                                                                <option value="20" <?php echo $currPPP===20?'selected':''; ?>>20 / page</option>
+                                                                <option value="50" <?php echo $currPPP===50?'selected':''; ?>>50 / page</option>
+                                                                <option value="100" <?php echo $currPPP===100?'selected':''; ?>>100 / page</option>
+                                                            </select>
                                                         </div>
                                                     </div>
                                                     <div class="card-body p-0">
@@ -1701,6 +1929,7 @@
                                                                 <thead class="table-light">
                                                                     <tr>
                                                                         <th style="width:60px;">#</th>
+                                                                        <th style="width:68px;">Photo</th>
                                                                         <th>Nom</th>
                                                                         <th>N° National</th>
                                                                         <th>Date naissance</th>
@@ -1728,8 +1957,17 @@
                                                                             data-etat_civil="<?php echo htmlspecialchars($p['etat_civil'] ?? '', ENT_QUOTES); ?>"
                                                                             data-personne_contact="<?php echo htmlspecialchars($p['personne_contact'] ?? '', ENT_QUOTES); ?>"
                                                                             data-observations="<?php echo htmlspecialchars($p['observations'] ?? '', ENT_QUOTES); ?>"
+                                                                            data-photo="<?php echo htmlspecialchars($p['photo'] ?? '', ENT_QUOTES); ?>"
                                                                         >
                                                                             <td><?php echo $idxp++; ?></td>
+                                                                            <td>
+                                                                                <?php $ph = (string)($p['photo'] ?? ''); ?>
+                                                                                <?php if ($ph !== ''): ?>
+                                                                                    <img src="<?php echo htmlspecialchars($ph, ENT_QUOTES); ?>" alt="Photo" style="width:48px; height:48px; object-fit:cover;" class="rounded">
+                                                                                <?php else: ?>
+                                                                                    <div class="bg-light text-muted d-inline-flex align-items-center justify-content-center rounded" style="width:48px; height:48px;">—</div>
+                                                                                <?php endif; ?>
+                                                                            </td>
                                                                             <td class="p-nom"><?php echo htmlspecialchars($p['nom'] ?? ''); ?> <span class="badge bg-danger ms-1 d-none arrest-badge">Arrêté</span></td>
                                                                             <td class="p-num"><?php echo htmlspecialchars($p['numero_national'] ?? ''); ?></td>
                                                                             <td class="p-dn"><?php echo htmlspecialchars($p['date_naissance'] ?? ''); ?></td>
@@ -1752,6 +1990,53 @@
                                                                     </tbody>
                                                             </table>
                                                         </div>
+                                                        <?php 
+                                                        // Pagination Entreprises (section #entreprises)
+                                                        $pg = isset($ent_pagination) && is_array($ent_pagination) ? $ent_pagination : null;
+                                                        if ($pg) {
+                                                            $p = (int)($pg['page'] ?? 1);
+                                                            $pp = (int)($pg['per_page'] ?? 20);
+                                                            $tp = (int)($pg['total_pages'] ?? 1);
+                                                            $tot = (int)($pg['total'] ?? 0);
+                                                            $prev = max(1, $p - 1);
+                                                            $next = min($tp, $p + 1);
+                                                            $qs = $_GET;
+                                                            $qs['ent_per_page'] = $pp;
+                                                            $qsFirst = $qs; $qsFirst['ent_page'] = 1;
+                                                            $qsPrev  = $qs; $qsPrev['ent_page']  = $prev;
+                                                            $qsNext  = $qs; $qsNext['ent_page']  = $next;
+                                                            $qsLast  = $qs; $qsLast['ent_page']  = $tp;
+                                                            $mk = function($arr){ return htmlspecialchars($_SERVER['PHP_SELF'] . '?' . http_build_query($arr) . '#entreprises'); };
+                                                        ?>
+                                                        <div class="d-flex align-items-center justify-content-between p-2 border-top flex-wrap gap-2">
+                                                            <div class="small text-muted">
+                                                                Page <strong><?php echo $p; ?></strong> / <?php echo $tp; ?> ·
+                                                                Affichées <strong><?php echo count($entreprises); ?></strong> sur <strong><?php echo $tot; ?></strong>
+                                                            </div>
+                                                            <div class="btn-group btn-group-sm" role="group">
+                                                                <a class="btn btn-light <?php echo $p<=1?'disabled':''; ?>" href="<?php echo $mk($qsFirst); ?>">« Première</a>
+                                                                <a class="btn btn-light <?php echo $p<=1?'disabled':''; ?>" href="<?php echo $mk($qsPrev); ?>">‹ Précédent</a>
+                                                                <?php 
+                                                                // Numérotation des pages (fenêtre autour de la page courante)
+                                                                $winE = 2; 
+                                                                $startE = max(1, $p - $winE);
+                                                                $endE = min($tp, $p + $winE);
+                                                                if ($endE - $startE < $winE*2) {
+                                                                    $missingE = $winE*2 - ($endE - $startE);
+                                                                    $startE = max(1, $startE - $missingE);
+                                                                    $endE = min($tp, $endE + ($winE*2 - ($endE - $startE)));
+                                                                }
+                                                                for ($ei=$startE; $ei<=$endE; $ei++) {
+                                                                    $qse = $qs; $qse['ent_page'] = $ei;
+                                                                    $activeE = $ei === $p ? 'active' : '';
+                                                                    echo '<a class="btn btn-light '.$activeE.'" href="'.$mk($qse).'">'.$ei.'</a>';
+                                                                }
+                                                                ?>
+                                                                <a class="btn btn-light <?php echo $p>=$tp?'disabled':''; ?>" href="<?php echo $mk($qsNext); ?>">Suivant ›</a>
+                                                                <a class="btn btn-light <?php echo $p>=$tp?'disabled':''; ?>" href="<?php echo $mk($qsLast); ?>">Dernière »</a>
+                                                            </div>
+                                                        </div>
+                                                        <?php } ?>
                                                     </div>
                                                 </div>
                                                
@@ -1839,19 +2124,33 @@
                                                         const detailsModalEl = document.getElementById('particulierDetailsModal');
                                                         if (detailsModalEl) { detailsModalEl.setAttribute('data-id', pid); }
                                                         const pnumero = get('numero_national');
-                                                        document.getElementById('pt_nom').textContent = get('nom');
-                                                        document.getElementById('pt_numero_national').textContent = get('numero_national');
-                                                        document.getElementById('pt_date_naissance').textContent = window.formatDMY(get('date_naissance'));
-                                                        document.getElementById('pt_genre').textContent = get('genre');
-                                                        document.getElementById('pt_etat_civil').textContent = get('etat_civil');
-                                                        document.getElementById('pt_adresse').textContent = get('adresse');
-                                                        document.getElementById('pt_profession').textContent = get('profession');
-                                                        document.getElementById('pt_personne_contact').textContent = get('personne_contact');
-                                                        document.getElementById('pt_gsm').textContent = get('gsm');
-                                                        document.getElementById('pt_email').textContent = get('email');
-                                                        document.getElementById('pt_nationalite').textContent = get('nationalite');
-                                                        document.getElementById('pt_lieu_naissance').textContent = get('lieu_naissance');
-                                                        document.getElementById('pt_observations').textContent = get('observations');
+                                                        const setText = (id, val)=>{ const el = document.getElementById(id); if (el) el.textContent = val || ''; };
+                                                        setText('pt_nom', get('nom'));
+                                                        // Photo
+                                                        (function(){
+                                                          const img = document.getElementById('pt_photo');
+                                                          if (!img) return;
+                                                          const src = get('photo');
+                                                          if (src) {
+                                                            img.src = src;
+                                                            img.classList.remove('d-none');
+                                                          } else {
+                                                            img.src = '';
+                                                            img.classList.add('d-none');
+                                                          }
+                                                        })();
+                                                        setText('pt_numero_national', get('numero_national'));
+                                                        try { setText('pt_date_naissance', window.formatDMY(get('date_naissance'))); } catch { setText('pt_date_naissance', get('date_naissance')); }
+                                                        setText('pt_genre', get('genre'));
+                                                        setText('pt_etat_civil', get('etat_civil'));
+                                                        setText('pt_adresse', get('adresse'));
+                                                        setText('pt_profession', get('profession'));
+                                                        setText('pt_personne_contact', get('personne_contact'));
+                                                        setText('pt_gsm', get('gsm'));
+                                                        setText('pt_email', get('email'));
+                                                        setText('pt_nationalite', get('nationalite'));
+                                                        setText('pt_lieu_naissance', get('lieu_naissance'));
+                                                        setText('pt_observations', get('observations'));
                                                         const tbodyCv = document.getElementById('pt_cv_tbody');
                                                         if (tbodyCv) { tbodyCv.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Chargement...</td></tr>'; }
                                                         const vehTbody = document.getElementById('pt_veh_tbody');
@@ -2224,6 +2523,25 @@
                                                           if (!resp.ok || !data.ok) throw new Error(data.error||'Erreur serveur');
                                                           if (fb) { fb.className = 'alert alert-success'; fb.textContent = 'Permis temporaire émis avec succès'; }
                                                           try { window.showSuccess && window.showSuccess('Permis temporaire émis'); } catch {}
+                                                          // Ouvrir / télécharger le PDF si disponible
+                                                          try {
+                                                            const pdfUrl = data.pdf || data.public_url || data.relative_url || '';
+                                                            const filename = data.filename || '';
+                                                            if (pdfUrl) {
+                                                              if (filename) {
+                                                                const a = document.createElement('a');
+                                                                a.href = pdfUrl;
+                                                                a.download = filename;
+                                                                a.target = '_blank';
+                                                                a.rel = 'noopener';
+                                                                document.body.appendChild(a);
+                                                                a.click();
+                                                                setTimeout(()=>{ try { a.remove(); } catch {} }, 100);
+                                                              } else {
+                                                                window.open(pdfUrl, '_blank');
+                                                              }
+                                                            }
+                                                          } catch {}
                                                           try { form.reset(); } catch {}
                                                           setTimeout(()=>{ try { bootstrap.Modal.getInstance(modalEl)?.hide(); } catch {} }, 600);
                                                           // Rafraîchir la bannière
@@ -2331,6 +2649,13 @@
                                                                 <option value="rccm_asc">RCCM A→Z</option>
                                                                 <option value="rccm_desc">RCCM Z→A</option>
                                                             </select>
+                                                            <?php $currPP = isset($ent_pagination['per_page']) ? (int)$ent_pagination['per_page'] : 20; ?>
+                                                            <select id="ent-per-page" class="form-select form-select-sm" title="Par page" style="min-width:140px;">
+                                                                <option value="10" <?php echo $currPP===10?'selected':''; ?>>10 / page</option>
+                                                                <option value="20" <?php echo $currPP===20?'selected':''; ?>>20 / page</option>
+                                                                <option value="50" <?php echo $currPP===50?'selected':''; ?>>50 / page</option>
+                                                                <option value="100" <?php echo $currPP===100?'selected':''; ?>>100 / page</option>
+                                                            </select>
                                                         </div>
                                                     </div>
                                                     <div class="card-body p-0">
@@ -2381,6 +2706,52 @@
                                                                 </tbody>
                                                             </table>
                                                         </div>
+                                                        <?php 
+                                                        // Pagination Entreprises (correct placement in #entreprises tab)
+                                                        $pg = isset($ent_pagination) && is_array($ent_pagination) ? $ent_pagination : null;
+                                                        if ($pg) {
+                                                            $p = (int)($pg['page'] ?? 1);
+                                                            $pp = (int)($pg['per_page'] ?? 20);
+                                                            $tp = (int)($pg['total_pages'] ?? 1);
+                                                            $tot = (int)($pg['total'] ?? 0);
+                                                            $prev = max(1, $p - 1);
+                                                            $next = min($tp, $p + 1);
+                                                            $qs = $_GET;
+                                                            $qs['ent_per_page'] = $pp;
+                                                            $qsFirst = $qs; $qsFirst['ent_page'] = 1;
+                                                            $qsPrev  = $qs; $qsPrev['ent_page']  = $prev;
+                                                            $qsNext  = $qs; $qsNext['ent_page']  = $next;
+                                                            $qsLast  = $qs; $qsLast['ent_page']  = $tp;
+                                                            $mk = function($arr){ return htmlspecialchars($_SERVER['PHP_SELF'] . '?' . http_build_query($arr) . '#entreprises'); };
+                                                        ?>
+                                                        <div class="d-flex align-items-center justify-content-between p-2 border-top flex-wrap gap-2">
+                                                            <div class="small text-muted">
+                                                                Page <strong><?php echo $p; ?></strong> / <?php echo $tp; ?> ·
+                                                                Affichées <strong><?php echo count($entreprises); ?></strong> sur <strong><?php echo $tot; ?></strong>
+                                                            </div>
+                                                            <div class="btn-group btn-group-sm" role="group">
+                                                                <a class="btn btn-light <?php echo $p<=1?'disabled':''; ?>" href="<?php echo $mk($qsFirst); ?>">« Première</a>
+                                                                <a class="btn btn-light <?php echo $p<=1?'disabled':''; ?>" href="<?php echo $mk($qsPrev); ?>">‹ Précédent</a>
+                                                                <?php 
+                                                                $winE = 2; 
+                                                                $startE = max(1, $p - $winE);
+                                                                $endE = min($tp, $p + $winE);
+                                                                if ($endE - $startE < $winE*2) {
+                                                                    $missingE = $winE*2 - ($endE - $startE);
+                                                                    $startE = max(1, $startE - $missingE);
+                                                                    $endE = min($tp, $endE + ($winE*2 - ($endE - $startE)));
+                                                                }
+                                                                for ($ei=$startE; $ei<=$endE; $ei++) {
+                                                                    $qse = $qs; $qse['ent_page'] = $ei;
+                                                                    $activeE = $ei === $p ? 'active' : '';
+                                                                    echo '<a class="btn btn-light '.$activeE.'" href="'.$mk($qse).'">'.$ei.'</a>';
+                                                                }
+                                                                ?>
+                                                                <a class="btn btn-light <?php echo $p>=$tp?'disabled':''; ?>" href="<?php echo $mk($qsNext); ?>">Suivant ›</a>
+                                                                <a class="btn btn-light <?php echo $p>=$tp?'disabled':''; ?>" href="<?php echo $mk($qsLast); ?>">Dernière »</a>
+                                                            </div>
+                                                        </div>
+                                                        <?php } ?>
                                                     </div>
                                                 </div>
 
@@ -2429,6 +2800,7 @@
                                                                                         <th>Amende</th>
                                                                                         <th>Description</th>
                                                                                         <th>Payé</th>
+                                                                                        <th>PDF</th>
                                                                                     </tr>
                                                                                 </thead>
                                                                                 <tbody></tbody>
@@ -2497,7 +2869,7 @@
                                                         document.getElementById('ent_secteur').textContent = get('secteur');
                                                         document.getElementById('ent_obs').textContent = get('observations');
                                                         const tcv = document.querySelector('#ent_table_contravs tbody');
-                                                        if (tcv){ tcv.innerHTML = ''; const list = CONTRAVS_ENT[eid] || []; if(list.length===0){ tcv.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Aucune contravention</td></tr>'; return; }
+                                                        if (tcv){ tcv.innerHTML = ''; const list = CONTRAVS_ENT[eid] || []; if(list.length===0){ tcv.innerHTML = '<tr><td colspan="9" class="text-center text-muted">Aucune contravention</td></tr>'; return; }
                                                             list.forEach((cv, idx)=>{
                                                                 const isPaid = (cv.payed===1||cv.payed==='1'||cv.payed===true);
                                                                 const checked = isPaid ? 'checked' : '';
@@ -2518,6 +2890,11 @@
                                                                             </div>
                                                                             <span class="badge bg-light text-dark ent-cv-payed-label">${label}</span>
                                                                         </div>
+                                                                    </td>
+                                                                    <td>
+                                                                        <button type="button" class="btn btn-sm btn-outline-primary view-ent-contrav-pdf" data-contrav-id="${cv.id}" title="Voir le PDF">
+                                                                            <i class="ri-eye-line"></i>
+                                                                        </button>
                                                                     </td>`;
                                                                 tcv.appendChild(trcv);
                                                             });
@@ -2539,24 +2916,36 @@
                                                     });
                                                     filterInput?.addEventListener('input', ()=>{ applyFilter(); applySort(); });
                                                     sortSelect?.addEventListener('change', ()=> applySort());
+                                                    
+                                                    // PDF viewing handler for entreprise contraventions (delegated)
+                                                    document.addEventListener('click', function(e){
+                                                      const btn = e.target.closest && e.target.closest('.view-ent-contrav-pdf');
+                                                      if (!btn) return;
+                                                      const contraventionId = btn.getAttribute('data-contrav-id');
+                                                      if (!contraventionId) {
+                                                        alert('ID de contravention manquant');
+                                                        return;
+                                                      }
+                                                      // Open PDF in new window/tab
+                                                      const pdfUrl = `/uploads/contraventions/contravention_${contraventionId}.pdf`;
+                                                      window.open(pdfUrl, '_blank');
+                                                    });
+                                                    
                                                     // Initial
                                                     applyFilter();
                                                 })();
                                                 </script>
 
-                                           
+                                            
                                       
-                                                <div class="text-center">
-                                                    <a href="javascript:void(0);" class="text-danger"><i class="ri-loader-fill me-1"></i> Load more </a>
-                                                </div>
+                                                
+                                                
+                                            </div><!-- end timeline content-->
     
-                                            </div>
-                                            <!-- end timeline content-->
-    
-                                        </div> <!-- end tab-content -->
-                                    </div> <!-- end card body -->
-                                </div> <!-- end card -->
-                            </div> <!-- end col -->
+                                        </div><!-- end tab-content -->
+                                    </div><!-- end card body -->
+                                </div><!-- end card -->
+                            </div><!-- end col -->
                         </div>
                 
         <!-- Modal actions Particulier (indépendante) -->
@@ -2702,6 +3091,9 @@
             if (form) { form.reset(); }
             document.getElementById('arr_particulier_id').value = String(pid);
             document.getElementById('arr_datetime').value = localISO;
+            // Clear and disable release date on creation
+            const sortieInput = document.getElementById('arr_date_sortie');
+            if (sortieInput) { sortieInput.value = ''; sortieInput.setAttribute('disabled','disabled'); }
             const alertBox = document.getElementById('arr_alert');
             if (alertBox) { alertBox.className = 'alert d-none'; alertBox.textContent=''; }
             try { bootstrap.Modal.getOrCreateInstance(document.getElementById('arrestationModal')).show(); } catch {}
@@ -2715,6 +3107,8 @@
               const alertBox = document.getElementById('arr_alert');
               if (!form) return;
               const fd = new FormData(form);
+              // Ensure no release date is sent at creation
+              try { fd.delete('date_sortie_prison'); } catch {}
               const motif = (fd.get('motif')||'').toString().trim();
               if (!motif) {
                 if (alertBox) { alertBox.className='alert alert-warning'; alertBox.textContent='Veuillez saisir le motif.'; alertBox.classList.remove('d-none'); }
@@ -3195,6 +3589,9 @@
               const formData = new FormData(form);
               // ensure payed field exists
               if (!formData.has('payed')) formData.set('payed','0');
+              // pass friendly name shown to the user so the PDF can display it
+              const targetLabel = (document.getElementById('ac_target_label')?.textContent || '').trim();
+              if (targetLabel) formData.set('nom', targetLabel);
               const resp = await fetch('/contravention/create', { method:'POST', body: formData });
               const data = await resp.json();
               if (!resp.ok || data.state === false || data.ok === false) {
@@ -3211,6 +3608,20 @@
               feedback.classList.remove('alert-info');
               feedback.classList.add('alert-success');
               feedback.textContent = 'Contravention enregistrée avec succès';
+              // Auto-download PDF if backend returned a URL
+              try {
+                const pdfUrl = (data && typeof data.pdf === 'string') ? data.pdf : null;
+                if (pdfUrl) {
+                  const a = document.createElement('a');
+                  a.href = pdfUrl;
+                  a.download = '';
+                  a.rel = 'noopener';
+                  a.target = '_blank';
+                  document.body.appendChild(a);
+                  a.click();
+                  setTimeout(()=>{ try { document.body.removeChild(a); } catch(_){} }, 1000);
+                }
+              } catch(_) { /* no-op */ }
               // Close after short delay and optionally refresh
               setTimeout(()=>{ 
                 const modalEl = document.getElementById('assignContravModal');

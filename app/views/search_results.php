@@ -123,7 +123,7 @@
                                                             <label class="form-label">Modèle</label>
                                                             <input id="vp_modele" type="text" class="form-control" value="<?= htmlspecialchars((string)($vehiculeRecord['modele'] ?? '')) ?>" disabled>
                                                         </div>
-                                                        <div class="col-md-3">
+                                                        <div class="col-md-3 d-none">
                                                             <label class="form-label">Année</label>
                                                             <input id="vp_annee" type="text" class="form-control" value="<?= htmlspecialchars((string)($vehiculeRecord['annee'] ?? '')) ?>" disabled>
                                                         </div>
@@ -134,6 +134,52 @@
                                                         <div class="col-md-6">
                                                             <label class="form-label">N° de châssis</label>
                                                             <input id="vp_numero_chassis" type="text" class="form-control" value="<?= htmlspecialchars((string)($vehiculeRecord['numero_chassis'] ?? '')) ?>" disabled>
+                                                        </div>
+                                                        <!-- Détails techniques (DGI) -->
+                                                        <div class="col-md-4">
+                                                            <label class="form-label">Genre</label>
+                                                            <?php $__genre = trim((string)($vehiculeRecord['genre'] ?? '')); ?>
+                                                            <input id="vp_genre" type="text" class="form-control" value="<?= $__genre !== '' ? htmlspecialchars($__genre) : 'N/A' ?>" disabled>
+                                                        </div>
+                                                        <div class="col-md-4">
+                                                            <label class="form-label">Usage</label>
+                                                            <?php $__usage = trim((string)($vehiculeRecord['usage'] ?? '')); ?>
+                                                            <input id="vp_usage" type="text" class="form-control" value="<?= $__usage !== '' ? htmlspecialchars($__usage) : 'N/A' ?>" disabled>
+                                                        </div>
+                                                        <div class="col-md-4">
+                                                            <label class="form-label">N° de déclaration</label>
+                                                            <?php $__numdecl = trim((string)($vehiculeRecord['numero_declaration'] ?? '')); ?>
+                                                            <input id="vp_numero_declaration" type="text" class="form-control" value="<?= $__numdecl !== '' ? htmlspecialchars($__numdecl) : 'N/A' ?>" disabled>
+                                                        </div>
+                                                        <div class="col-md-4">
+                                                            <label class="form-label">N° moteur</label>
+                                                            <?php $__nmot = trim((string)($vehiculeRecord['num_moteur'] ?? '')); ?>
+                                                            <input id="vp_num_moteur" type="text" class="form-control" value="<?= $__nmot !== '' ? htmlspecialchars($__nmot) : 'N/A' ?>" disabled>
+                                                        </div>
+                                                        <div class="col-md-4">
+                                                            <label class="form-label">Origine</label>
+                                                            <?php $__orig = trim((string)($vehiculeRecord['origine'] ?? '')); ?>
+                                                            <input id="vp_origine" type="text" class="form-control" value="<?= $__orig !== '' ? htmlspecialchars($__orig) : 'N/A' ?>" disabled>
+                                                        </div>
+                                                        <div class="col-md-4">
+                                                            <label class="form-label">Source</label>
+                                                            <?php $__src = trim((string)($vehiculeRecord['source'] ?? '')); ?>
+                                                            <input id="vp_source" type="text" class="form-control" value="<?= $__src !== '' ? htmlspecialchars($__src) : 'N/A' ?>" disabled>
+                                                        </div>
+                                                        <div class="col-md-4">
+                                                            <label class="form-label">Année fabrication</label>
+                                                            <?php $__af = trim((string)($vehiculeRecord['annee_fab'] ?? '')); ?>
+                                                            <input id="vp_annee_fab" type="text" class="form-control" value="<?= $__af !== '' ? htmlspecialchars($__af) : 'N/A' ?>" disabled>
+                                                        </div>
+                                                        <div class="col-md-4">
+                                                            <label class="form-label">Année mise en circulation</label>
+                                                            <?php $__ac = trim((string)($vehiculeRecord['annee_circ'] ?? '')); ?>
+                                                            <input id="vp_annee_circ" type="text" class="form-control" value="<?= $__ac !== '' ? htmlspecialchars($__ac) : 'N/A' ?>" disabled>
+                                                        </div>
+                                                        <div class="col-md-4">
+                                                            <label class="form-label">Type émission</label>
+                                                            <?php $__tem = trim((string)($vehiculeRecord['type_em'] ?? '')); ?>
+                                                            <input id="vp_type_em" type="text" class="form-control" value="<?= $__tem !== '' ? htmlspecialchars($__tem) : 'N/A' ?>" disabled>
                                                         </div>
                                                         <div class="col-md-6">
                                                             <label class="form-label">Propriétaire</label>
@@ -362,9 +408,18 @@
                                             setVal('vp_plaque', rec.plaque);
                                             setVal('vp_marque', rec.marque);
                                             setVal('vp_modele', rec.modele);
-                                            setVal('vp_annee', rec.annee);
                                             setVal('vp_couleur', rec.couleur);
                                             setVal('vp_numero_chassis', rec.numero_chassis);
+                                            // Technical details
+                                            setVal('vp_genre', rec.genre);
+                                            setVal('vp_usage', rec.usage);
+                                            setVal('vp_numero_declaration', rec.numero_declaration);
+                                            setVal('vp_num_moteur', rec.num_moteur);
+                                            setVal('vp_origine', rec.origine);
+                                            setVal('vp_source', rec.source);
+                                            setVal('vp_annee_fab', rec.annee_fab);
+                                            setVal('vp_annee_circ', rec.annee_circ);
+                                            setVal('vp_type_em', rec.type_em);
                                             if (ownerInput) {
                                                 const ow = ownersById[String(rec[pk])] || null;
                                                 const name = ow && ow.proprietaire ? String(ow.proprietaire) : 'N/A';
@@ -1280,7 +1335,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 body
             }).then(r=>r.json()).then(res=>{
                 if (res && res.state === true) {
-                    // success
+                    // Auto-download PDF if provided
+                    try {
+                        const pdfUrl = (res && typeof res.pdf === 'string') ? res.pdf : null;
+                        if (pdfUrl) {
+                            const a = document.createElement('a');
+                            a.href = pdfUrl;
+                            a.download = '';
+                            a.rel = 'noopener';
+                            a.target = '_blank';
+                            document.body.appendChild(a);
+                            a.click();
+                            setTimeout(()=>{ try { document.body.removeChild(a); } catch(_){} }, 1000);
+                        }
+                    } catch(_) { /* no-op */ }
+                    // success UI
                     const modalEl = document.getElementById('assignContravModal');
                     if (modalEl && window.bootstrap) {
                         const m = bootstrap.Modal.getOrCreateInstance(modalEl);

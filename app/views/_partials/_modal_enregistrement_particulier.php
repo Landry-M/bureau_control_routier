@@ -8,7 +8,7 @@
             </div>
             <div class="p-1">
                 <div class="modal-body px-3 pt-3 pb-0">
-                    <form id="particulier-form" method="POST" action="/create-particulier">
+                    <form id="particulier-form" method="POST" action="/create-particulier" enctype="multipart/form-data">
                         <div class="row">
                             <div class="col-md-12">
                                 <div class="mb-3">
@@ -127,6 +127,18 @@
                             </div>
                         </div>
 
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="mb-3">
+                                    <label for="photo_particulier" class="form-label">Photo (optionnel)</label>
+                                    <input type="file" name="photo" id="photo_particulier" class="form-control" accept="image/*">
+                                    <div class="form-text">Formats acceptés: JPG, PNG, GIF. Taille max ~5 Mo.</div>
+                                    <img id="photo_particulier_preview" src="" alt="Aperçu photo" class="img-thumbnail mt-2 d-none" style="max-height: 160px;">
+                                    <div id="photo_particulier_placeholder" class="text-muted small mt-2">Aucune image sélectionnée</div>
+                                </div>
+                            </div>
+                        </div>
+
                     </form>
                 </div>
                 <div class="px-3 pb-3 text-center">
@@ -221,6 +233,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Soumettre le formulaire vers la route /create-particulier
             particulierForm.submit();
+            // Reset de l'aperçu après soumission (pour retour visuel immédiat)
+            try { if (typeof resetPhotoPreview === 'function') { resetPhotoPreview(); } } catch (e) {}
         });
     }
 
@@ -245,6 +259,66 @@ document.addEventListener('DOMContentLoaded', function() {
         const minDate = new Date();
         minDate.setFullYear(today.getFullYear() - 120);
         dateInput.setAttribute('min', minDate.toISOString().split('T')[0]);
+    }
+
+    // Prévisualisation de la photo
+    const photoInput = particulierForm ? particulierForm.querySelector('#photo_particulier') : null;
+    const photoPreview = document.getElementById('photo_particulier_preview');
+    const photoPlaceholder = document.getElementById('photo_particulier_placeholder');
+    const showPlaceholder = () => { if (photoPlaceholder) photoPlaceholder.classList.remove('d-none'); };
+    const hidePlaceholder = () => { if (photoPlaceholder) photoPlaceholder.classList.add('d-none'); };
+    const resetPhotoPreview = () => {
+        if (photoInput) photoInput.value = '';
+        if (photoPreview) {
+            photoPreview.src = '';
+            photoPreview.classList.add('d-none');
+        }
+        showPlaceholder();
+    };
+    if (photoInput && photoPreview) {
+        photoInput.addEventListener('change', function () {
+            const file = this.files && this.files[0] ? this.files[0] : null;
+            if (!file) {
+                photoPreview.src = '';
+                photoPreview.classList.add('d-none');
+                showPlaceholder();
+                return;
+            }
+            const maxBytes = 5 * 1024 * 1024; // 5MB
+            if (!file.type.startsWith('image/')) {
+                alert('Veuillez sélectionner une image valide.');
+                this.value = '';
+                photoPreview.src = '';
+                photoPreview.classList.add('d-none');
+                showPlaceholder();
+                return;
+            }
+            if (file.size > maxBytes) {
+                alert('La taille de l\'image dépasse 5 Mo. Veuillez sélectionner une image plus légère.');
+                this.value = '';
+                photoPreview.src = '';
+                photoPreview.classList.add('d-none');
+                showPlaceholder();
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                photoPreview.src = e.target && e.target.result ? e.target.result : '';
+                if (photoPreview.src) {
+                    photoPreview.classList.remove('d-none');
+                    hidePlaceholder();
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // Reset à la fermeture du modal
+    const particulierModal = document.getElementById('particulier-modal');
+    if (particulierModal) {
+        particulierModal.addEventListener('hidden.bs.modal', function () {
+            resetPhotoPreview();
+        });
     }
 });
 </script>

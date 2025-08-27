@@ -22,7 +22,8 @@ class ArrestationController extends Db
         $motif = trim((string)($data['motif'] ?? ''));
         $lieu = trim((string)($data['lieu'] ?? ''));
         $dateArrestation = trim((string)($data['date_arrestation'] ?? ''));
-        $dateSortiePrison = trim((string)($data['date_sortie_prison'] ?? ''));
+        // On creation, date_sortie_prison must be empty (ignored if provided)
+        $dateSortiePrison = '';
         if ($particulierId <= 0 || $motif === '') {
             return ['ok' => false, 'error' => 'Paramètres invalides'];
         }
@@ -32,11 +33,8 @@ class ArrestationController extends Db
             $ts = strtotime($dateArrestation);
             if ($ts !== false) { $dateNorm = date('Y-m-d H:i:s', $ts); }
         }
+        // Force no release date at creation time
         $dateSortieNorm = null;
-        if ($dateSortiePrison !== '') {
-            $ts2 = strtotime($dateSortiePrison);
-            if ($ts2 !== false) { $dateSortieNorm = date('Y-m-d H:i:s', $ts2); }
-        }
         $now = date('Y-m-d H:i:s');
 
         $row = ORM::for_table('arrestations')->create();
@@ -44,7 +42,7 @@ class ArrestationController extends Db
         $row->motif = $motif;
         $row->lieu = $lieu !== '' ? $lieu : null;
         $row->date_arrestation = $dateNorm;
-        $row->date_sortie_prison = $dateSortieNorm;
+        $row->date_sortie_prison = null;
         $row->created_by = $_SESSION['user']['username'] ?? null;
         $row->created_at = $now;
         $row->updated_at = $now;
