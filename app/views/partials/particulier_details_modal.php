@@ -45,7 +45,7 @@
       if (!json || json.ok !== true) return;
       const list = Array.isArray(json.data) ? json.data : [];
       const active = list.find(p => (p.statut||'') === 'actif');
-      if (active && permisBanner) {
+        if (active && permisBanner) {
         const numero = active.numero || '';
         const dd = active.date_debut || active.dateDebut || '';
         const df = active.date_fin || active.dateFin || '';
@@ -53,6 +53,12 @@
         const dfDisp = window.formatDMY ? (window.formatDMY(df) || df) : df;
         if (permisText) permisText.textContent = `${numero ? 'N° ' + numero + ' — ' : ''}du ${ddDisp} au ${dfDisp}`;
         if (btnClosePermis) btnClosePermis.setAttribute('data-permis-id', String(active.id||''));
+        // Configurer le bouton de prévisualisation
+        const btnPreviewPermis = document.getElementById('pt_btn_preview_permis');
+        if (btnPreviewPermis && active.id) {
+          btnPreviewPermis.setAttribute('data-permis-id', String(active.id));
+          btnPreviewPermis.setAttribute('data-permis-numero', numero || '');
+        }
         // Determine expiration
         let isExpired = false;
         try {
@@ -77,6 +83,11 @@
         // No active permit
         permisBanner.classList.add('d-none');
         if (btnClosePermis) btnClosePermis.removeAttribute('data-permis-id');
+        const btnPreviewPermis = document.getElementById('pt_btn_preview_permis');
+        if (btnPreviewPermis) {
+          btnPreviewPermis.removeAttribute('data-permis-id');
+          btnPreviewPermis.removeAttribute('data-permis-numero');
+        }
       }
     } catch(_){ /* no-op */ }
   }
@@ -316,6 +327,47 @@
     });
   }
 
+  // Preview active permis temporaire PDF
+  document.addEventListener('click', function(e) {
+    const btn = e.target.closest('#pt_btn_preview_permis');
+    if (!btn) return;
+    
+    const permisId = btn.getAttribute('data-permis-id');
+    const numero = btn.getAttribute('data-permis-numero');
+    
+    // If missing, try to resolve the active permis by fetching from API using the current particulier id
+    if (!permisId) {
+      try {
+        const modal = document.getElementById('particulierDetailsModal');
+        const pid = modal ? (modal.getAttribute('data-pt-id') || modal.getAttribute('data-id')) : '';
+        if (!pid) { alert('ID du permis temporaire manquant'); return; }
+        fetch(`/particulier/${encodeURIComponent(pid)}/permis-temporaire`, { method: 'GET' })
+          .then(r => r.json())
+          .then(j => {
+            const list = (j && j.ok && Array.isArray(j.data)) ? j.data : [];
+            // Prefer actif; fallback to first item
+            const active = list.find(p => (p.statut||'') === 'actif') || list[0];
+            const id = active && (active.id || active.ID || active.permis_id);
+            const num = (btn.getAttribute('data-permis-numero') || active?.numero || '');
+            if (!id) { alert('Aucun permis temporaire trouvé pour ce particulier'); return; }
+            const url = `/permis-temporaire/display?id=${encodeURIComponent(id)}${num ? '&numero=' + encodeURIComponent(num) : ''}`;
+            // Persist attributes for next time
+            btn.setAttribute('data-permis-id', String(id));
+            if (num) btn.setAttribute('data-permis-numero', String(num));
+            window.open(url, '_blank', 'noopener,noreferrer');
+          })
+          .catch(() => alert('Impossible de récupérer le permis temporaire'));
+      } catch (_) {
+        alert('ID du permis temporaire manquant');
+      }
+      return;
+    }
+    
+    // Ouvrir la page de prévisualisation
+    const previewUrl = `/permis-temporaire/display?id=${encodeURIComponent(permisId)}${numero ? '&numero=' + encodeURIComponent(numero) : ''}`;
+    window.open(previewUrl, '_blank', 'noopener,noreferrer');
+  });
+
   // Expose refresh functions for external triggers (e.g., after creation)
   try { window.__refreshPtPermis = loadPermisTemporaire; } catch(_) {}
   try { window.__refreshPtVehicules = loadVehicules; } catch(_) {}
@@ -501,6 +553,9 @@
                                         <span class="badge bg-danger ms-2 d-none" id="pt_permis_badge">Expiré</span>
                                     </div>
                                     <div>
+                                        <button type="button" class="btn btn-sm btn-outline-primary me-2" id="pt_btn_preview_permis" data-permis-id="" title="Prévisualiser le permis">
+                                            <i class="ri-eye-line me-1"></i> Voir PDF
+                                        </button>
                                         <button type="button" class="btn btn-sm btn-outline-dark" id="pt_btn_close_permis" data-permis-id="">Clore le permis</button>
                                     </div>
                                 </div>
@@ -550,7 +605,7 @@
                                         <th>Description</th>
                                         <th>Montant</th>
                                         <th>Payé</th>
-                                        <th>PDF</th>
+                                        <th>Document</th>
                                     </tr>
                                 </thead>
                                 <tbody id="pt_cv_tbody"></tbody>

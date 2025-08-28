@@ -37,7 +37,7 @@
                                 <div class="row">
                                     <div class="col-md-4"><div class="mb-3"><label for="genre" class="form-label">Genre</label><input type="text" name="genre" id="genre" class="form-control"></div></div>
                                     <div class="col-md-4"><div class="mb-3"><label for="usage" class="form-label">Usage</label><input type="text" name="usage" id="usage" class="form-control"></div></div>
-                                    <div class="col-md-4"><div class="mb-3"><label for="numero_declaration" class="form-label">Numéro de déclaration</label><input type="text" name="numero_declaration" id="numero_declaration" class="form-control"></div></div>
+                                    <div class="col-md-4"><div class="mb-3"><label for="numero_declaration" class="form-label">Numéro volet jaune</label><input type="text" name="numero_declaration" id="numero_declaration" class="form-control"></div></div>
                                 </div>
                                 <div class="row">
                                     <div class="col-md-4"><div class="mb-3"><label for="num_moteur" class="form-label">Numéro moteur</label><input type="text" name="num_moteur" id="num_moteur" class="form-control"></div></div>

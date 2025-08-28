@@ -21,8 +21,6 @@ class EntrepriseController extends Db
         $entreprise = ORM::for_table('entreprises')
             ->create();
         $entreprise->designation = $data['designation'];
-        $entreprise->marque_vehicule = $data['marque_vehicule'];
-        $entreprise->plaque_vehicule = $data['plaque_vehicule'];
         $entreprise->siege_social = $data['siege_social'];
         $entreprise->gsm = $data['contact_telephone'];
         $entreprise->email = $data['contact_email'];

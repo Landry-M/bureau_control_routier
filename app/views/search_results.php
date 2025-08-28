@@ -643,7 +643,12 @@
                 <div class="flex-grow-1">
                   <h6 class="card-title mb-1">Émettre un permis de conduire temporaire</h6>
                   <p class="text-muted small mb-2">Créer un permis provisoire pour une durée limitée.</p>
-                  <button type="button" class="btn btn-sm btn-primary" id="pt_btn_launch_permis_card" data-action="launch-permis" onclick="return window.__launchPermisFromBtn ? window.__launchPermisFromBtn(event, this) : false;">Émettre maintenant</button>
+                  <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-primary" id="pt_btn_launch_permis_card" data-action="launch-permis" onclick="return window.__launchPermisFromBtn ? window.__launchPermisFromBtn(event, this) : false;">Émettre maintenant</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="pt_btn_preview_existing_card" title="Voir le permis temporaire actif">
+                      <i class="ri-eye-line"></i> Voir PDF
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -946,12 +951,65 @@ document.addEventListener('DOMContentLoaded', function(){
       if (!resp.ok || !data.ok) throw new Error(data.error||'Erreur serveur');
       if (fb) { fb.className = 'alert alert-success'; fb.textContent = 'Permis temporaire émis avec succès'; }
       try { window.showSuccess && window.showSuccess('Permis temporaire émis'); } catch {}
+      // Ouvrir la page de prévisualisation du permis temporaire
+      try {
+        const permisId = data.id || data.permis_id || '';
+        const numero = data.numero || '';
+        if (permisId && numero) {
+          // Ouvrir la page de prévisualisation dans un nouvel onglet
+          const previewUrl = `/permis-temporaire/display?id=${encodeURIComponent(permisId)}&numero=${encodeURIComponent(numero)}`;
+          window.open(previewUrl, '_blank', 'noopener,noreferrer');
+        } else if (permisId) {
+          // Fallback avec seulement l'ID
+          const previewUrl = `/permis-temporaire/display?id=${encodeURIComponent(permisId)}`;
+          window.open(previewUrl, '_blank', 'noopener,noreferrer');
+        }
+      } catch {}
       try { form.reset(); } catch {}
       setTimeout(()=>{ try { bootstrap.Modal.getInstance(modalEl)?.hide(); } catch {} }, 600);
     } catch(err){
       if (fb) { fb.className = 'alert alert-danger'; fb.textContent = err.message || 'Erreur inconnue'; }
     } finally {
       if (submitBtn) submitBtn.disabled = false;
+    }
+  });
+
+  // Preview active permis temporaire PDF from search results
+  document.addEventListener('click', async function(e) {
+    const btn = e.target.closest('#pt_btn_preview_existing_card');
+    if (!btn) return;
+    
+    const pid = document.getElementById('particulierActionsModal')?.getAttribute('data-dossier-id') || window.__getCurrentParticulierId();
+    if (!pid) {
+      alert('Particulier non sélectionné');
+      return;
+    }
+    
+    try {
+      // Récupérer le permis temporaire actif
+      const resp = await fetch(`/particulier/${encodeURIComponent(pid)}/permis-temporaire`, { method: 'GET' });
+      const json = await resp.json();
+      
+      if (!json || json.ok !== true) {
+        alert('Erreur lors de la récupération des permis temporaires');
+        return;
+      }
+      
+      const list = Array.isArray(json.data) ? json.data : [];
+      const active = list.find(p => (p.statut || '') === 'actif');
+      
+      if (!active) {
+        alert('Aucun permis temporaire actif trouvé pour ce particulier');
+        return;
+      }
+      
+      // Ouvrir la page de prévisualisation
+      const previewUrl = `/permis-temporaire/display?id=${encodeURIComponent(active.id)}&numero=${encodeURIComponent(active.numero || '')}`;
+      window.open(previewUrl, '_blank', 'noopener,noreferrer');
+      
+    } catch (error) {
+      console.error('Erreur:', error);
+      alert('Erreur lors de la récupération du permis temporaire');
     }
   });
 

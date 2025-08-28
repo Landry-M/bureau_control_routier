@@ -35,6 +35,7 @@ if(!isset($_SESSION))
 //var_dump($_SERVER['REQUEST_URI']);
 
 $router = new AltoRouter();
+$router->setBasePath('');
 
 
 $router->map('GET','/',function (){
@@ -224,6 +225,25 @@ $router->map('POST','/plaque/temporaire', function(){
         if ($vehId <= 0 || $numero === '') {
             ob_clean(); http_response_code(400); echo json_encode(['ok'=>false,'error'=>'Paramètres manquants']); return;
         }
+        
+        // Vérifier les restrictions de rôle pour les plaques temporaires
+        $userRole = $_SESSION['user']['role'] ?? '';
+        if (!in_array($userRole, ['admin', 'superadmin'])) {
+            // Initialiser la connexion DB pour vérifier le nombre de plaques existantes
+            (new \Model\Db())->getConnexion();
+            $existingCount = \ORM::for_table('permis_temporaire')
+                ->where('cible_type', 'vehicule_plaque')
+                ->where('cible_id', $vehId)
+                ->where('motif', 'plaque_temporaire')
+                ->count();
+            
+            if ($existingCount >= 2) {
+                ob_clean(); http_response_code(403); 
+                echo json_encode(['ok'=>false,'error'=>'Limite atteinte: maximum 2 plaques temporaires par véhicule pour votre rôle']); 
+                return;
+            }
+        }
+        
         $payload = [
             'cible_type' => 'vehicule_plaque',
             'cible_id' => $vehId,
@@ -428,6 +448,53 @@ $router->map('POST','/permis-temporaire/[i:id]/close', function($id){
     }
 });
 
+// Page de prévisualisation du permis temporaire
+$router->map('GET','/permis-temporaire/display', function(){
+    if (!isset($_SESSION['user'])) {
+        header('Location: /');
+        return;
+    }
+    require_once 'views/permis_temporaire_display.php';
+});
+
+// Page de prévisualisation de la plaque temporaire
+$router->map('GET','/plaque-temporaire/display', function(){
+    if (!isset($_SESSION['user'])) {
+        header('Location: /');
+        return;
+    }
+    require_once 'views/plaque_temporaire_display.php';
+});
+
+// API: Sauvegarder le PDF de la plaque temporaire
+$router->map('POST','/plaque-temporaire/[i:id]/save-pdf', function($id){
+    error_reporting(E_ALL); ini_set('display_errors', 1); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $ctrl = new PermisTemporaireController();
+        $res = $ctrl->savePlaquePdfToServer((int)$id);
+        ob_clean(); echo json_encode($res);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
+    }
+});
+
+// API: Sauvegarder le PDF du permis temporaire
+$router->map('POST','/permis-temporaire/[i:id]/save-pdf', function($id){
+    error_reporting(E_ALL); ini_set('display_errors', 1); ob_start();
+    header('Content-Type: application/json; charset=utf-8');
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
+    try {
+        $ctrl = new PermisTemporaireController();
+        $res = $ctrl->savePdfToServer((int)$id);
+        ob_clean(); echo json_encode($res);
+    } catch (\Throwable $e) {
+        ob_clean(); http_response_code(500); 
+        echo json_encode(['ok'=>false,'error'=>'Server error: ' . $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+    }
+});
+
 // API: véhicules d'un particulier (JSON)
 $router->map('GET','/particulier/[i:id]/vehicules', function($id){
     // Eviter toute pollution de sortie qui casse le JSON
@@ -559,19 +626,24 @@ $router->map('GET','/admin/migrate-contraventions-dossier-id', function(){
 
 // Créer une contravention
 $router->map('POST','/contravention/create', function(){
+    // JSON propre sans pollution d'output
+    error_reporting(0); ini_set('display_errors', 0); ob_start();
     header('Content-Type: application/json; charset=utf-8');
-    if (!isset($_SESSION['user'])) {
-        http_response_code(401);
-        echo json_encode(['ok'=>false, 'error'=>'Unauthorized']);
-        return;
-    }
+    if (!isset($_SESSION['user'])) { ob_clean(); http_response_code(401); echo json_encode(['ok'=>false,'error'=>'Unauthorized']); return; }
     try {
         $ctrl = new ContraventionsController();
         $res = $ctrl->create($_POST);
+        if (!is_array($res)) { ob_clean(); http_response_code(500); echo json_encode(['ok'=>false,'error'=>'Invalid response']); return; }
+        ob_clean();
         echo json_encode($res);
     } catch (Exception $e) {
+        ob_clean();
         http_response_code(500);
-        echo json_encode(['ok'=>false, 'error'=>$e->getMessage()]);
+        echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
+    } catch (Throwable $e) {
+        ob_clean();
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'Internal server error']);
     }
 });
 

@@ -92,7 +92,7 @@ class PermisTemporaireController extends Db
                     $pdfError = 'PDF non écrit sur le disque';
                 }
             } elseif ($cibleType === 'particulier' && class_exists('Dompdf\\Dompdf')) {
-                $pdfInfo = $this->generatePermisParticulierPdf([
+                $pdfInfo = $this->generatePermisParticulierPdfFromTemplate([
                     'id' => $id,
                     'numero' => $numero,
                     'cible_type' => $cibleType,
@@ -280,5 +280,182 @@ class PermisTemporaireController extends Db
         }
 
         return ['path' => $filePath, 'public_url' => $publicUrl, 'relative_url' => $relativeUrl, 'filename' => $filename];
+    }
+
+    // Génère un PDF permis temporaire pour un particulier à partir du template permis_tmp.php
+    private function generatePermisParticulierPdfFromTemplate(array $data)
+    {
+        // Récupérer les infos du particulier
+        $this->getConnexion();
+        $pid = (int)($data['cible_id'] ?? 0);
+        $part = null;
+        if ($pid > 0) {
+            $row = ORM::for_table('particuliers')->find_one($pid);
+            if ($row) { $part = $row->as_array(); }
+        }
+        if (!$part) {
+            throw new \RuntimeException('Particulier introuvable pour le permis temporaire');
+        }
+
+        // Préparer les données pour le template
+        $numero = $data['numero'] ?? '';
+        $date_debut = $data['date_debut'] ?? null;
+        $date_fin = $data['date_fin'] ?? null;
+        
+        // Formater les données du particulier
+        $nom = htmlspecialchars((string)($part['nom'] ?? ''), ENT_QUOTES);
+        $prenom = '';
+        // Séparer nom et prénom si stockés ensemble
+        if ($nom && strpos($nom, ' ') !== false) {
+            $pieces = preg_split('/\s+/', $nom, 2);
+            if (is_array($pieces)) { 
+                $nom = htmlspecialchars($pieces[0] ?? '', ENT_QUOTES); 
+                $prenom = htmlspecialchars($pieces[1] ?? '', ENT_QUOTES); 
+            }
+        }
+        
+        $numero_national = htmlspecialchars((string)($part['numero_national'] ?? ''), ENT_QUOTES);
+        $adresse = htmlspecialchars((string)($part['adresse'] ?? ''), ENT_QUOTES);
+        $nationalite = htmlspecialchars((string)($part['nationalite'] ?? 'Congolaise'), ENT_QUOTES);
+        $date_naissance = htmlspecialchars((string)($part['date_naissance'] ?? ''), ENT_QUOTES);
+        $lieu_naissance = htmlspecialchars((string)($part['lieu_naissance'] ?? ''), ENT_QUOTES);
+        
+        // Gérer la photo
+        $photoSrc = '';
+        $photoRel = (string)($part['photo'] ?? '');
+        if ($photoRel !== '') {
+            $fsPath = __DIR__ . '/../' . ltrim($photoRel, '/');
+            if (is_file($fsPath)) {
+                $mime = 'image/jpeg';
+                $ext = strtolower(pathinfo($fsPath, PATHINFO_EXTENSION));
+                if ($ext === 'png') $mime = 'image/png'; 
+                elseif ($ext === 'gif') $mime = 'image/gif';
+                $photoData = @file_get_contents($fsPath);
+                if ($photoData !== false) { 
+                    $photoSrc = 'data:' . $mime . ';base64,' . base64_encode($photoData); 
+                }
+            }
+        }
+
+        // Préparer le HTML via le template permis_tmp.php modifié
+        ob_start();
+        include __DIR__ . '/../views/permis_tmp_filled.php';
+        $html = ob_get_clean();
+
+        $dompdf = new Dompdf(['isRemoteEnabled' => true]);
+        $dompdf->loadHtml($html);
+        $dompdf->setPaper([0, 0, 500, 315], 'landscape'); // Format carte
+        $dompdf->render();
+
+        // Sauvegarder dans uploads/permis_temporaire
+        $dir = __DIR__ . '/../uploads/permis_temporaire';
+        if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
+        if (!is_dir($dir)) { throw new \RuntimeException('Impossible de créer le répertoire: ' . $dir); }
+        if (!is_writable($dir)) { @chmod($dir, 0775); }
+        if (!is_writable($dir)) { throw new \RuntimeException('Répertoire non inscriptible: ' . $dir); }
+        $filename = 'permis_temporaire_' . ($data['id'] ?? 'N') . '.pdf';
+        $filePath = $dir . '/' . $filename;
+        $bytes = @file_put_contents($filePath, $dompdf->output());
+        if ($bytes === false || !is_file($filePath) || filesize($filePath) <= 0) {
+            throw new \RuntimeException('Echec écriture PDF dans ' . $filePath);
+        }
+
+        // URL publique et relative
+        $basePath = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? ''), '/');
+        $relativeUrl = $basePath . '/uploads/permis_temporaire/' . $filename;
+        $publicUrl = null;
+        if (isset($_SERVER['HTTP_HOST'])) {
+            $scheme = isset($_SERVER['REQUEST_SCHEME']) ? $_SERVER['REQUEST_SCHEME'] : 'http';
+            $publicUrl = $scheme . '://' . $_SERVER['HTTP_HOST'] . $relativeUrl;
+        }
+
+        return ['path' => $filePath, 'public_url' => $publicUrl, 'relative_url' => $relativeUrl, 'filename' => $filename];
+    }
+
+    /**
+     * Sauvegarder le PDF du permis temporaire sur le serveur (depuis upload client)
+     */
+    public function savePdfToServer($id)
+    {
+        $this->getConnexion();
+        
+        // Récupérer les données du permis temporaire via l'ORM
+        $permisRow = ORM::for_table('permis_temporaire')->find_one((int)$id);
+        if (!$permisRow) {
+            return ['ok' => false, 'error' => 'Permis temporaire introuvable'];
+        }
+
+        // Vérifier si le PDF existe déjà
+        $existingPath = trim((string)($permisRow->pdf_path ?? ''));
+        if ($existingPath !== '') {
+            $existingPdfPath = __DIR__ . '/../' . ltrim($existingPath, '/');
+            if (file_exists($existingPdfPath)) {
+                return [
+                    'ok' => true,
+                    'message' => 'PDF déjà existant',
+                    'pdf_path' => $existingPath,
+                    'download_url' => '/' . ltrim($existingPath, '/')
+                ];
+            }
+        }
+
+        // Vérifier si un fichier PDF a été uploadé
+        if (!isset($_FILES['pdf']) || $_FILES['pdf']['error'] !== UPLOAD_ERR_OK) {
+            return ['ok' => false, 'error' => 'Aucun fichier PDF reçu ou erreur d\'upload'];
+        }
+
+        $uploadedFile = $_FILES['pdf'];
+        
+        // Vérifier le type MIME
+        if ($uploadedFile['type'] !== 'application/pdf') {
+            return ['ok' => false, 'error' => 'Le fichier doit être un PDF'];
+        }
+
+        // Créer le dossier de destination s'il n'existe pas
+        $uploadsDir = __DIR__ . '/../uploads';
+        $permisDir = $uploadsDir . '/permis_temporaire';
+        if (!is_dir($permisDir)) {
+            if (!mkdir($permisDir, 0755, true)) {
+                return ['ok' => false, 'error' => 'Impossible de créer le dossier permis_temporaire'];
+            }
+        }
+
+        // Nom du fichier de destination
+        $numero = (string)($permisRow->numero ?? '');
+        $cibleType = (string)($permisRow->cible_type ?? '');
+        
+        // Différencier le nom selon le type (permis ou plaque)
+        if ($cibleType === 'vehicule_plaque') {
+            $filename = 'plaque_temporaire_' . ($numero ?: $id) . '.pdf';
+        } else {
+            $filename = 'permis_temporaire_' . ($numero ?: $id) . '.pdf';
+        }
+        $destinationPath = $permisDir . '/' . $filename;
+
+        // Déplacer le fichier uploadé
+        if (!move_uploaded_file($uploadedFile['tmp_name'], $destinationPath)) {
+            return ['ok' => false, 'error' => 'Impossible de sauvegarder le fichier PDF'];
+        }
+
+        // Mettre à jour le chemin dans la base de données via l'ORM
+        $relativePath = 'uploads/permis_temporaire/' . $filename;
+        $permisRow->pdf_path = $relativePath;
+        $permisRow->updated_at = date('Y-m-d H:i:s');
+        $permisRow->save();
+
+        return [
+            'ok' => true,
+            'message' => 'PDF sauvegardé avec succès',
+            'pdf_path' => $relativePath,
+            'download_url' => '/' . $relativePath,
+        ];
+    }
+
+    /**
+     * Sauvegarder le PDF de la plaque temporaire sur le serveur (depuis upload client)
+     */
+    public function savePlaquePdfToServer($id)
+    {
+        return $this->savePdfToServer($id); // Utilise la même logique mais avec différenciation du nom de fichier
     }
 }

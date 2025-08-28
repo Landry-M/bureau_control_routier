@@ -19,20 +19,6 @@
                             </div>
                         </div>
 
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="marque_vehicule" class="form-label">Marque du véhicule</label>
-                                    <input type="text" name="marque_vehicule" id="marque_vehicule" class="form-control" placeholder="Ex: Toyota, Mercedes, etc.">
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="plaque_vehicule" class="form-label">Plaque d'immatriculation</label>
-                                    <input type="text" name="plaque_vehicule" id="plaque_vehicule" class="form-control" placeholder="Ex: AB-123-CD">
-                                </div>
-                            </div>
-                        </div>
 
                         <div class="row">
                             <div class="col-md-12">

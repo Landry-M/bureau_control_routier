@@ -86,6 +86,40 @@
         <div><?php echo nl2br(htmlspecialchars($cvData['description'] ?? '')); ?></div>
     </div>
 
+    <?php if (!empty($cvData['photos'])): ?>
+    <div class="section-title">Photos de preuve</div>
+    <div class="content">
+        <div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: flex-start;">
+            <?php foreach ($cvData['photos'] as $index => $photo): ?>
+                <?php 
+                // Resolve filesystem path relative to app/ (this file is in app/views/pdf)
+                $appRoot = realpath(__DIR__ . '/../../'); // points to .../app
+                $relativePath = ltrim($photo['file_path'] ?? '', '/'); // expected: assets/images/contraventions/...
+                $photoPath = $appRoot . '/' . $relativePath;
+                // Minimal debug
+                error_log('PDF photo resolved path: ' . $photoPath . ' exists=' . (file_exists($photoPath) ? 'YES' : 'NO'));
+                
+                if (file_exists($photoPath)):
+                    $imageData = base64_encode(file_get_contents($photoPath));
+                    $mimeType = $photo['mime_type'] ?? 'image/jpeg';
+                ?>
+                <div style="flex: 0 0 calc(33.333% - 10px); margin-bottom: 15px; display: flex; flex-direction: column; align-items: center;">
+                    <div style="width: 160px; height: 120px; border: 1px solid #ddd; overflow: hidden; display: flex; align-items: center; justify-content: center; background-color: #f9f9f9;">
+                        <img src="data:<?php echo $mimeType; ?>;base64,<?php echo $imageData; ?>" 
+                             style="max-width: 100%; max-height: 100%; object-fit: contain;" 
+                             alt="Photo <?php echo $index + 1; ?>">
+                    </div>
+                </div>
+                <?php else: ?>
+                    <div style="flex: 0 0 calc(33.333% - 10px); margin-bottom: 15px; border: 1px solid red; padding: 10px; display: flex; align-items: center; justify-content: center;">
+                        <p style="text-align: center; font-size: 12px;">Photo non trouvée</p>
+                    </div>
+                <?php endif; ?>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="footer">
         <div class="sig">
             Signature de l'agent

@@ -126,6 +126,32 @@
                             }
                         }
                     }
+
+                    // Données liées si c'est un véhicule: plaques temporaires
+                    $isVehicule = in_array(strtolower($tableName), ['vehicule_plaque','vehicules'], true);
+                    $vehiculeId = 0;
+                    $plaques_temporaires = [];
+                    if ($isVehicule) {
+                        if (isset($record['id']) && is_scalar($record['id'])) {
+                            $vehiculeId = (int)$record['id'];
+                        } elseif ($displayId !== '') {
+                            $vehiculeId = (int)$displayId;
+                        }
+                        if ($vehiculeId > 0) {
+                            try { 
+                                $ctrl = new \Control\PermisTemporaireController();
+                                $plaques_temporaires = $ctrl->listByVehicule($vehiculeId);
+                                // Filtrer pour ne garder que les plaques temporaires
+                                if (is_array($plaques_temporaires)) {
+                                    $plaques_temporaires = array_filter($plaques_temporaires, function($item) {
+                                        return isset($item['motif']) && $item['motif'] === 'plaque_temporaire';
+                                    });
+                                }
+                            } catch (\Throwable $e) { 
+                                $plaques_temporaires = []; 
+                            }
+                        }
+                    }
                 ?>
 
                 <div class="row">
@@ -289,6 +315,44 @@
                                         </tbody>
                                       </table>
                                     </div>
+                                    
+                                    <!-- Photos section -->
+                                    <?php
+                                    $contraventionId = (int)($cv['id'] ?? 0);
+                                    if ($contraventionId > 0) {
+                                        require_once __DIR__ . '/../control/ContraventionsController.php';
+                                        $contraventionsController = new \Control\ContraventionsController();
+                                        $photos = $contraventionsController->getPhotos($contraventionId);
+                                        
+                                        if (!empty($photos)): ?>
+                                    <div class="mt-4">
+                                      <h6 class="fw-bold text-muted mb-3">
+                                        <i class="ri-image-line me-2"></i>Photos de preuve
+                                      </h6>
+                                      <div class="row g-2">
+                                        <?php foreach ($photos as $photo): ?>
+                                        <div class="col-md-3 col-sm-4 col-6">
+                                          <div class="card">
+                                            <img src="/<?php echo htmlspecialchars($photo['file_path']); ?>" 
+                                                 class="card-img-top contrav-photo-thumb" 
+                                                 style="height: 120px; object-fit: cover; cursor: pointer;"
+                                                 alt="<?php echo htmlspecialchars($photo['original_name']); ?>"
+                                                 title="Cliquer pour agrandir"
+                                                 onclick="showPhotoModal('<?php echo htmlspecialchars($photo['file_path']); ?>', '<?php echo htmlspecialchars($photo['original_name']); ?>')">
+                                            <div class="card-body p-2">
+                                              <small class="text-muted d-block text-truncate" title="<?php echo htmlspecialchars($photo['original_name']); ?>">
+                                                <?php echo htmlspecialchars($photo['original_name']); ?>
+                                              </small>
+                                              <small class="text-muted">
+                                                <?php echo number_format($photo['file_size'] / 1024, 1); ?> KB
+                                              </small>
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <?php endforeach; ?>
+                                      </div>
+                                    </div>
+                                    <?php endif; } ?>
                                   </div>
                                   <div class="modal-footer">
                                     <button type="button" class="btn btn-outline-primary view-cv-detail-pdf" data-contrav-id="<?php echo htmlspecialchars((string)($cv['id'] ?? '')); ?>" title="Voir le PDF">
@@ -301,6 +365,24 @@
                             </div>
                         <?php endforeach; ?>
                         <?php endif; ?>
+
+        <!-- Photo Modal for enlarged view -->
+        <div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true">
+          <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" id="photoModalLabel">Photo de preuve</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body text-center">
+                <img id="photoModalImage" src="" class="img-fluid" alt="Photo de preuve" style="max-height: 70vh;">
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Fermer</button>
+              </div>
+            </div>
+          </div>
+        </div>
 
                         <?php if ($isParticulier && !empty($pv_list)): ?>
                         <div class="card mt-3">
@@ -373,6 +455,68 @@
                                                     if ($d) { $ts = strtotime($d); if ($ts) { $fmt = date('d-m-Y', $ts); } }
                                                     echo htmlspecialchars($fmt ?: $d);
                                                     ?>
+                                                </td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+
+                        <?php if ($isVehicule && !empty($plaques_temporaires)): ?>
+                        <div class="card mt-3">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h4 class="header-title mb-0">Plaques temporaires</h4>
+                                    <span class="badge bg-secondary"><?php echo count($plaques_temporaires); ?></span>
+                                </div>
+                                <div class="table-responsive border rounded">
+                                    <table class="table table-sm table-hover align-middle mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Numéro</th>
+                                                <th>Du</th>
+                                                <th>Au</th>
+                                                <th>Statut</th>
+                                                <th>PDF</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($plaques_temporaires as $plaque): ?>
+                                            <tr>
+                                                <td class="fw-semibold"><?php echo htmlspecialchars((string)($plaque['numero'] ?? '')); ?></td>
+                                                <td>
+                                                    <?php 
+                                                      $d = $plaque['date_debut'] ?? '';
+                                                      $fmt = '';
+                                                      if ($d) { $ts = strtotime((string)$d); if ($ts) { $fmt = date('d-m-Y', $ts); } }
+                                                      echo htmlspecialchars($fmt ?: (string)$d);
+                                                    ?>
+                                                </td>
+                                                <td>
+                                                    <?php 
+                                                      $d = $plaque['date_fin'] ?? '';
+                                                      $fmt = '';
+                                                      if ($d) { $ts = strtotime((string)$d); if ($ts) { $fmt = date('d-m-Y', $ts); } }
+                                                      echo htmlspecialchars($fmt ?: (string)$d);
+                                                    ?>
+                                                </td>
+                                                <td>
+                                                    <?php 
+                                                      $statut = (string)($plaque['statut'] ?? 'actif');
+                                                      $badgeClass = $statut === 'actif' ? 'bg-success' : 'bg-secondary';
+                                                      echo '<span class="badge ' . $badgeClass . '">' . htmlspecialchars($statut) . '</span>';
+                                                    ?>
+                                                </td>
+                                                <td>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary view-plaque-temp-pdf" 
+                                                            data-plaque-id="<?php echo htmlspecialchars((string)($plaque['id'] ?? '')); ?>" 
+                                                            data-plaque-numero="<?php echo htmlspecialchars((string)($plaque['numero'] ?? '')); ?>"
+                                                            title="Voir le PDF de la plaque temporaire">
+                                                        <i class="ri-eye-line"></i>
+                                                    </button>
                                                 </td>
                                             </tr>
                                             <?php endforeach; ?>
@@ -667,6 +811,37 @@ document.addEventListener('click', function(e){
   const pdfUrl = `/uploads/contraventions/contravention_${contraventionId}.pdf`;
   window.open(pdfUrl, '_blank');
 });
+
+// PDF viewing handler for temporary license plates
+document.addEventListener('click', function(e){
+  const btn = e.target.closest && e.target.closest('.view-plaque-temp-pdf');
+  if (!btn) return;
+  const plaqueId = btn.getAttribute('data-plaque-id');
+  const plaqueNumero = btn.getAttribute('data-plaque-numero');
+  if (!plaqueId && !plaqueNumero) {
+    alert('Informations de plaque temporaire manquantes');
+    return;
+  }
+  // Open PDF in new window/tab using numero as filename
+  const pdfUrl = `/uploads/permis_temporaire/plaque_temporaire_${plaqueNumero}.pdf`;
+  window.open(pdfUrl, '_blank');
+});
+
+// Function to show photo modal
+function showPhotoModal(imagePath, originalName) {
+  const modal = document.getElementById('photoModal');
+  const modalImage = document.getElementById('photoModalImage');
+  const modalTitle = document.getElementById('photoModalLabel');
+  
+  if (modal && modalImage && modalTitle) {
+    modalImage.src = '/' + imagePath;
+    modalTitle.textContent = originalName || 'Photo de preuve';
+    
+    // Show the modal using Bootstrap
+    const bsModal = new bootstrap.Modal(modal);
+    bsModal.show();
+  }
+}
 </script>
 
 <?php if (isset($_SESSION['error'])): ?>

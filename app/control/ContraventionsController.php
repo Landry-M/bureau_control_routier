@@ -20,21 +20,34 @@ class ContraventionsController extends Db{
 
     public function create($data)
     {
-        $this->getConnexion();
-        $contravention = ORM::for_table('contraventions')
-            ->create();
+        // Initialize result array
+        $result = ['state' => false, 'message' => ''];
         
-        $contravention->dossier_id = $data['dossier_id'];
-        $contravention->type_dossier = $data['type_dossier'];
-        $contravention->date_infraction = $data['date_infraction'];
-        $contravention->lieu = $data['lieu'];
-        $contravention->type_infraction = $data['type_infraction'];
-        $contravention->description = $data['description'];
-        $contravention->reference_loi = $data['reference_loi'];
-        $contravention->amende = $data['amende'];
-        $contravention->payed = $data['payed'];
+        try {
+            $this->getConnexion();
+            $contravention = ORM::for_table('contraventions')
+                ->create();
+            
+            // Validate required fields
+            if (empty($data['dossier_id']) || empty($data['type_dossier'])) {
+                $result['message'] = 'Dossier ID et type de dossier sont requis';
+                return $result;
+            }
+            
+            $contravention->dossier_id = $data['dossier_id'];
+            $contravention->type_dossier = $data['type_dossier'];
+            $contravention->date_infraction = $data['date_infraction'] ?? '';
+            $contravention->lieu = $data['lieu'] ?? '';
+            $contravention->type_infraction = $data['type_infraction'] ?? '';
+            $contravention->description = $data['description'] ?? '';
+            $contravention->reference_loi = $data['reference_loi'] ?? '';
+            $contravention->amende = $data['amende'] ?? 0;
+            $contravention->payed = $data['payed'] ?? 0;
         
-        if ($contravention->save()) {
+            if ($contravention->save()) {
+            // Handle photo uploads
+            $this->handlePhotoUploads($contravention->id());
+            
             // Log creation
             try {
                 $this->activityLogger->logCreate(
@@ -58,6 +71,9 @@ class ContraventionsController extends Db{
             // Tenter de générer un PDF si Dompdf est disponible
             try {
                 if (class_exists('Dompdf\\Dompdf')) {
+                    // Get photos for PDF
+                    $photos = $this->getPhotos($contravention->id());
+                    
                     $pdfInfo = $this->generateContraventionPdf([
                         'id' => $contravention->id,
                         'dossier_id' => $contravention->dossier_id,
@@ -71,6 +87,7 @@ class ContraventionsController extends Db{
                         'reference_loi' => $contravention->reference_loi,
                         'amende' => $contravention->amende,
                         'payed' => $contravention->payed,
+                        'photos' => $photos,
                     ]);
                     if ($pdfInfo && isset($pdfInfo['path'])) {
                         $result['pdf'] = $pdfInfo['public_url'] ?? $pdfInfo['path'];
@@ -81,9 +98,14 @@ class ContraventionsController extends Db{
             }
 
             return $result;
-        }else{
+            }else{
+                $result['state'] = false;
+                $result['message'] = 'Erreur lors de l\'enregistrement';
+                return $result;
+            }
+        } catch (\Throwable $e) {
             $result['state'] = false;
-            $result['message'] = 'Erreur lors de l\'enregistrement';
+            $result['message'] = 'Erreur: ' . $e->getMessage();
             return $result;
         }
     }
@@ -125,5 +147,119 @@ class ContraventionsController extends Db{
         }
 
         return ['path' => $filePath, 'public_url' => $publicUrl, 'filename' => $filename];
+    }
+
+    /**
+     * Handle photo uploads for a contravention
+     */
+    private function handlePhotoUploads($contraventionId)
+    {
+        if (!isset($_FILES['photos']) || !is_array($_FILES['photos']['tmp_name'])) {
+            return [];
+        }
+
+        $uploadDir = __DIR__ . '/../assets/images/contraventions/';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+
+        $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+        $maxFileSize = 5 * 1024 * 1024; // 5MB
+        $photoPaths = [];
+
+        foreach ($_FILES['photos']['tmp_name'] as $index => $tmpName) {
+            if (empty($tmpName) || $_FILES['photos']['error'][$index] !== UPLOAD_ERR_OK) {
+                continue;
+            }
+
+            $originalName = $_FILES['photos']['name'][$index] ?? '';
+            $fileSize = $_FILES['photos']['size'][$index] ?? 0;
+            $mimeType = $_FILES['photos']['type'][$index] ?? '';
+
+            // Validate file type
+            if (!in_array($mimeType, $allowedTypes)) {
+                continue;
+            }
+
+            // Validate file size
+            if ($fileSize > $maxFileSize) {
+                continue;
+            }
+
+            // Generate unique filename with timestamp and random component
+            $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+            $timestamp = date('YmdHis');
+            $randomString = bin2hex(random_bytes(8)); // 16 character random string
+            $filename = 'contravention_' . $contraventionId . '_' . $timestamp . '_' . $randomString . '.' . $extension;
+            $filePath = $uploadDir . $filename;
+            
+            // Ensure filename is unique (extra safety check)
+            $counter = 1;
+            while (file_exists($filePath)) {
+                $filename = 'contravention_' . $contraventionId . '_' . $timestamp . '_' . $randomString . '_' . $counter . '.' . $extension;
+                $filePath = $uploadDir . $filename;
+                $counter++;
+            }
+
+            // Move uploaded file
+            if (move_uploaded_file($tmpName, $filePath)) {
+                $photoPaths[] = 'assets/images/contraventions/' . $filename;
+            }
+        }
+
+        // Update contravention record with photo paths
+        if (!empty($photoPaths)) {
+            try {
+                $this->getConnexion();
+                $contravention = ORM::for_table('contraventions')->find_one($contraventionId);
+                if ($contravention) {
+                    $contravention->photos = implode(',', $photoPaths);
+                    $contravention->save();
+                }
+            } catch (\Throwable $e) {
+                // If database update fails, remove uploaded files
+                foreach ($photoPaths as $path) {
+                    $fullPath = __DIR__ . '/../' . $path;
+                    if (file_exists($fullPath)) {
+                        unlink($fullPath);
+                    }
+                }
+            }
+        }
+
+        return $photoPaths;
+    }
+
+    /**
+     * Get photos for a contravention
+     */
+    public function getPhotos($contraventionId)
+    {
+        $this->getConnexion();
+        $contravention = ORM::for_table('contraventions')->find_one($contraventionId);
+        
+        if (!$contravention || empty($contravention->photos)) {
+            return [];
+        }
+        
+        $photoPaths = explode(',', (string)$contravention->photos);
+        $photos = [];
+        
+        foreach ($photoPaths as $path) {
+            $path = trim($path);
+            if (!empty($path)) {
+                $fullPath = __DIR__ . '/../' . $path;
+                if (file_exists($fullPath)) {
+                    $photos[] = [
+                        'file_path' => $path,
+                        'original_name' => basename($path),
+                        'file_size' => filesize($fullPath),
+                        'mime_type' => mime_content_type($fullPath)
+                    ];
+                }
+            }
+        }
+        
+        return $photos;
     }
 }

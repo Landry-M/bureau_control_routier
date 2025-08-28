@@ -510,26 +510,7 @@
                                                           </div>
                                                           <div class="tab-pane fade" id="tab-cond-contravs" role="tabpanel">
                                                             <div class="table-responsive">
-                                                            const rows = table.querySelectorAll('tbody tr');
-                                                            rows.forEach(tr=>{
-                                                                colIndexes.forEach(idx=>{
-                                                                    const td = tr.querySelector(`td:nth-child(${idx})`);
-                                                                    if (td) {
-                                                                        const span = td.querySelector('.date-text');
-                                                                        if (span) span.textContent = window.formatDMY(span.textContent);
-                                                                        else td.textContent = window.formatDMY(td.textContent);
-                                                                    }
-                                                                });
-                                                            });
-                                                        }
-
-                                                        // Appliquer sur les tables visibles dans la page
-                                                        // Conducteurs: 4 = Date de naissance, 5 = Expiration permis
-                                                        formatTableDateColumns('#table-conducteurs', [4,5]);
-                                                        // Véhicules: 6 = Valide le, 7 = Expire le
-                                                        formatTableDateColumns('#vehicules-table2', [6,7]);
-                                                        // Particuliers: 4 = Date naissance
-                                                        formatTableDateColumns('#particuliers-table', [4]);
+     
                                                               </style>
                                                               <table class="table table-sm table-striped align-middle" id="table-contravs">
                                                                 <thead>
@@ -542,6 +523,7 @@
                                                                     <th>Amende</th>
                                                                     <th>Description</th>
                                                                     <th>Payé</th>
+                                                                    <th>Document</th>
                                                                   </tr>
                                                                 </thead>
                                                                 <tbody></tbody>
@@ -675,6 +657,11 @@
                                                                             </div>
                                                                             <span class="badge bg-light text-dark cv-payed-label">${label}</span>
                                                                         </div>
+                                                                    </td>
+                                                                    <td class="text-center">
+                                                                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="window.open('/uploads/contraventions/contravention_${cv.id}.pdf', '_blank')" title="Voir le PDF">
+                                                                            <i class="ri-eye-line"></i>
+                                                                        </button>
                                                                     </td>
                                                                 `;
                                                                 tbody.appendChild(tr);
@@ -841,6 +828,7 @@
                                                                             <td class="veh2-plaque"><?php echo htmlspecialchars($v['plaque'] ?? ''); ?>
                                                                                 <?php $__hasTemp = !empty($v['plaque_temporaire']); ?>
                                                                                 <span class="badge bg-warning text-dark ms-2 veh2-temp-badge" style="display: <?php echo ($__hasTemp ? '' : 'none'); ?>;" title="Plaque temporaire" data-bs-toggle="tooltip">Plaque temporaire</span>
+                                                                                <button type="button" class="btn btn-sm btn-outline-primary ms-1 veh2-temp-view" style="display: <?php echo ($__hasTemp ? '' : 'none'); ?>;" title="Voir la plaque temporaire" data-bs-toggle="tooltip"><i class="ri-eye-line"></i></button>
                                                                                 <button type="button" class="btn btn-sm btn-outline-danger ms-1 veh2-temp-close" style="display: <?php echo ($__hasTemp ? '' : 'none'); ?>;" title="Clôturer la plaque temporaire" data-bs-toggle="tooltip">Fermer</button>
                                                                             </td>
                                                                             <td class="veh2-valide"><?php
@@ -1009,7 +997,7 @@
                                                                                         <th>Amende</th>
                                                                                         <th>Description</th>
                                                                                         <th>Payé</th>
-                                                                                        <th>PDF</th>
+                                                                                        <th>Document</th>
                                                                                     </tr>
                                                                                 </thead>
                                                                                 <tbody></tbody>
@@ -1805,6 +1793,7 @@
                                                     const tr = document.querySelector(`tr[data-veh-id="${CSS.escape(String(vehId))}"]`);
                                                     if (tr){
                                                       const badge = tr.querySelector('.veh2-temp-badge');
+                                                      const btnView = tr.querySelector('.veh2-temp-view');
                                                       const btnClose = tr.querySelector('.veh2-temp-close');
                                                       if (activeItem){
                                                         const d1 = (activeItem.date_debut||'').slice(0,10);
@@ -1816,6 +1805,13 @@
                                                           badge.setAttribute('title', (d1&&d2) ? `Valide du ${d1} au ${d2}` : 'Plaque temporaire');
                                                           try { const t = bootstrap.Tooltip.getInstance(badge); if (t) t.dispose(); } catch{}
                                                           try { new bootstrap.Tooltip(badge); } catch{}
+                                                        }
+                                                        if (btnView){
+                                                          btnView.style.display = '';
+                                                          btnView.onclick = function(){
+                                                            const previewUrl = `/plaque-temporaire/display?id=${encodeURIComponent(String(activeItem.id))}&vehicule_id=${encodeURIComponent(String(vehId))}&numero=${encodeURIComponent(numero)}`;
+                                                            window.open(previewUrl, '_blank');
+                                                          };
                                                         }
                                                         if (btnClose){
                                                           btnClose.style.display = '';
@@ -1832,11 +1828,12 @@
                                                                 alert(jr && (jr.error||jr.message) ? (jr.error||jr.message) : 'Échec de clôture');
                                                               }
                                                             } catch { alert('Erreur réseau'); }
-                                                            finally { btnClose.disabled = false; }
+                                                            btnClose.disabled = false;
                                                           };
                                                         }
                                                       } else {
                                                         if (badge) badge.style.display = 'none';
+                                                        if (btnView) btnView.style.display = 'none';
                                                         if (btnClose) btnClose.style.display = 'none';
                                                       }
                                                     }
@@ -1867,20 +1864,27 @@
                                                       try{ bootstrap.Modal.getOrCreateInstance(document.getElementById('plaqueTempModal')).hide(); }catch{}
                                                       // Refresh badge state on the corresponding row
                                                       refreshVehTempBadge(vehId);
-                                                      // Téléchargement automatique du PDF si disponible
+                                                      // Ouvrir la page de prévisualisation de la plaque temporaire
                                                       try {
-                                                        const pdfUrl = j.pdf || null;
-                                                        if (pdfUrl) {
-                                                          // Tenter un vrai téléchargement
-                                                          const a = document.createElement('a');
-                                                          a.href = pdfUrl;
-                                                          a.target = '_blank';
-                                                          if (j.filename) { a.download = j.filename; }
-                                                          document.body.appendChild(a);
-                                                          a.click();
-                                                          a.remove();
-                                                          // Fallback immédiat: ouvrir dans un nouvel onglet pour garantir la visibilité tout en gardant le contexte du clic
-                                                          try { window.open(pdfUrl, '_blank'); } catch {}
+                                                        const plaqueId = j.id || null;
+                                                        const numero = j.numero || null;
+                                                        if (plaqueId && numero) {
+                                                          // Ouvrir la page de prévisualisation dans un nouvel onglet
+                                                          const previewUrl = `/plaque-temporaire/display?id=${encodeURIComponent(plaqueId)}&numero=${encodeURIComponent(numero)}`;
+                                                          window.open(previewUrl, '_blank');
+                                                        } else {
+                                                          // Fallback: téléchargement automatique du PDF si disponible
+                                                          const pdfUrl = j.pdf || null;
+                                                          if (pdfUrl) {
+                                                            const a = document.createElement('a');
+                                                            a.href = pdfUrl;
+                                                            a.target = '_blank';
+                                                            if (j.filename) { a.download = j.filename; }
+                                                            document.body.appendChild(a);
+                                                            a.click();
+                                                            a.remove();
+                                                            try { window.open(pdfUrl, '_blank'); } catch {}
+                                                          }
                                                         }
                                                       } catch {}
                                                     }
@@ -2523,23 +2527,18 @@
                                                           if (!resp.ok || !data.ok) throw new Error(data.error||'Erreur serveur');
                                                           if (fb) { fb.className = 'alert alert-success'; fb.textContent = 'Permis temporaire émis avec succès'; }
                                                           try { window.showSuccess && window.showSuccess('Permis temporaire émis'); } catch {}
-                                                          // Ouvrir / télécharger le PDF si disponible
+                                                          // Ouvrir la page de prévisualisation du permis temporaire
                                                           try {
-                                                            const pdfUrl = data.pdf || data.public_url || data.relative_url || '';
-                                                            const filename = data.filename || '';
-                                                            if (pdfUrl) {
-                                                              if (filename) {
-                                                                const a = document.createElement('a');
-                                                                a.href = pdfUrl;
-                                                                a.download = filename;
-                                                                a.target = '_blank';
-                                                                a.rel = 'noopener';
-                                                                document.body.appendChild(a);
-                                                                a.click();
-                                                                setTimeout(()=>{ try { a.remove(); } catch {} }, 100);
-                                                              } else {
-                                                                window.open(pdfUrl, '_blank');
-                                                              }
+                                                            const permisId = data.id || data.permis_id || '';
+                                                            const numero = data.numero || '';
+                                                            if (permisId && numero) {
+                                                              // Ouvrir la page de prévisualisation dans un nouvel onglet
+                                                              const previewUrl = `/permis-temporaire/display?id=${encodeURIComponent(permisId)}&numero=${encodeURIComponent(numero)}`;
+                                                              window.open(previewUrl, '_blank', 'noopener,noreferrer');
+                                                            } else if (permisId) {
+                                                              // Fallback avec seulement l'ID
+                                                              const previewUrl = `/permis-temporaire/display?id=${encodeURIComponent(permisId)}`;
+                                                              window.open(previewUrl, '_blank', 'noopener,noreferrer');
                                                             }
                                                           } catch {}
                                                           try { form.reset(); } catch {}
@@ -2781,8 +2780,6 @@
                                                                             <div class="col-md-4"><div class="text-muted small">Téléphone</div><div class="fw-medium" id="ent_gsm"></div></div>
                                                                             <div class="col-md-4"><div class="text-muted small">Email</div><div class="fw-medium" id="ent_email"></div></div>
                                                                             <div class="col-md-4"><div class="text-muted small">Personne de contact</div><div class="fw-medium" id="ent_contact"></div></div>
-                                                                            <div class="col-md-6"><div class="text-muted small">Véhicule</div><div class="fw-medium" id="ent_marque"></div></div>
-                                                                            <div class="col-md-6"><div class="text-muted small">Plaque</div><div class="fw-medium" id="ent_plaque"></div></div>
                                                                             <div class="col-12"><div class="text-muted small">Secteur</div><div class="fw-medium" id="ent_secteur"></div></div>
                                                                             <div class="col-12"><div class="text-muted small">Observations</div><div class="fw-medium" id="ent_obs"></div></div>
                                                                         </div>
@@ -2800,7 +2797,7 @@
                                                                                         <th>Amende</th>
                                                                                         <th>Description</th>
                                                                                         <th>Payé</th>
-                                                                                        <th>PDF</th>
+                                                                                        <th>Document</th>
                                                                                     </tr>
                                                                                 </thead>
                                                                                 <tbody></tbody>
@@ -2864,8 +2861,6 @@
                                                         document.getElementById('ent_gsm').textContent = get('gsm');
                                                         document.getElementById('ent_email').textContent = get('email');
                                                         document.getElementById('ent_contact').textContent = get('personne_contact');
-                                                        document.getElementById('ent_marque').textContent = get('marque_vehicule');
-                                                        document.getElementById('ent_plaque').textContent = get('plaque_vehicule');
                                                         document.getElementById('ent_secteur').textContent = get('secteur');
                                                         document.getElementById('ent_obs').textContent = get('observations');
                                                         const tcv = document.querySelector('#ent_table_contravs tbody');
@@ -3387,6 +3382,17 @@
                       <label class="form-label">Description</label>
                       <textarea class="form-control" name="description" rows="3" placeholder="Détails supplémentaires (optionnel)"></textarea>
                     </div>
+                    <div class="col-12">
+                      <label class="form-label">Photos de preuve</label>
+                      <input type="file" class="form-control" id="contrav_photos" name="photos[]" multiple accept="image/*">
+                      <div class="form-text">
+                        Sélectionnez une ou plusieurs photos comme preuve de la contravention (formats: JPG, PNG, GIF)
+                        <span id="photo_count_indicator" class="badge bg-primary ms-2 d-none"></span>
+                      </div>
+                      <div id="photo_preview_container" class="mt-3 d-none">
+                        <div class="row g-2" id="photo_preview_grid"></div>
+                      </div>
+                    </div>
                   </div>
                 </form>
                 <div class="alert mt-3 d-none" id="ac_feedback"></div>
@@ -3592,6 +3598,11 @@
               // pass friendly name shown to the user so the PDF can display it
               const targetLabel = (document.getElementById('ac_target_label')?.textContent || '').trim();
               if (targetLabel) formData.set('nom', targetLabel);
+              // Add selected photos to form data
+              const photos = window.getContraventionPhotos ? window.getContraventionPhotos() : [];
+              photos.forEach((photo, index) => {
+                formData.append('photos[]', photo);
+              });
               const resp = await fetch('/contravention/create', { method:'POST', body: formData });
               const data = await resp.json();
               if (!resp.ok || data.state === false || data.ok === false) {
@@ -3605,6 +3616,8 @@
               const hidDid = document.getElementById('ac_dossier_id'); if (hidDid) hidDid.value = '';
               const hidType = document.getElementById('ac_type_dossier'); if (hidType) hidType.value = '';
               const info = document.getElementById('ac_target_label'); if (info) { info.textContent = ''; info.style.display = 'none'; }
+              // Clear photo previews
+              if (window.clearContraventionPhotos) window.clearContraventionPhotos();
               feedback.classList.remove('alert-info');
               feedback.classList.add('alert-success');
               feedback.textContent = 'Contravention enregistrée avec succès';
@@ -3637,6 +3650,117 @@
               submitBtn.disabled = false;
             }
           });
+        })();
+
+        // Photo preview functionality for contravention form
+        (function(){
+          const photoInput = document.getElementById('contrav_photos');
+          const previewContainer = document.getElementById('photo_preview_container');
+          const previewGrid = document.getElementById('photo_preview_grid');
+          const countIndicator = document.getElementById('photo_count_indicator');
+          let selectedFiles = [];
+
+          if (!photoInput || !previewContainer || !previewGrid) return;
+
+          function updatePhotoCount() {
+            if (selectedFiles.length > 0) {
+              countIndicator.textContent = `${selectedFiles.length} photo${selectedFiles.length > 1 ? 's' : ''} sélectionnée${selectedFiles.length > 1 ? 's' : ''}`;
+              countIndicator.classList.remove('d-none');
+              previewContainer.classList.remove('d-none');
+            } else {
+              countIndicator.classList.add('d-none');
+              previewContainer.classList.add('d-none');
+            }
+          }
+
+          photoInput.addEventListener('change', function(e) {
+            const files = Array.from(e.target.files);
+            files.forEach(file => {
+              if (file.type.startsWith('image/')) {
+                selectedFiles.push(file);
+                addPhotoPreview(file, selectedFiles.length - 1);
+              }
+            });
+            
+            updatePhotoCount();
+            
+            // Clear the input to allow re-selecting the same file
+            photoInput.value = '';
+          });
+
+          function addPhotoPreview(file, index) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+              const col = document.createElement('div');
+              col.className = 'col-md-3 col-sm-4 col-6';
+              col.innerHTML = `
+                <div class="position-relative">
+                  <img src="${e.target.result}" class="img-thumbnail w-100" style="height: 120px; object-fit: cover;">
+                  <button type="button" class="btn btn-danger btn-sm position-absolute top-0 end-0 m-1 remove-photo" 
+                          data-index="${index}" style="width: 25px; height: 25px; padding: 0; border-radius: 50%;">
+                    <i class="ri-close-line" style="font-size: 12px;"></i>
+                  </button>
+                  <div class="small text-muted mt-1 text-truncate">${file.name}</div>
+                </div>
+              `;
+              previewGrid.appendChild(col);
+            };
+            reader.readAsDataURL(file);
+          }
+
+          // Event delegation for remove buttons
+          previewGrid.addEventListener('click', function(e) {
+            if (e.target.closest('.remove-photo')) {
+              const index = parseInt(e.target.closest('.remove-photo').dataset.index);
+              removePhoto(index);
+            }
+          });
+
+          function removePhoto(index) {
+            // Remove from selectedFiles array
+            selectedFiles.splice(index, 1);
+            
+            // Remove preview element
+            const previewElements = previewGrid.children;
+            for (let i = 0; i <previewElements.length; i++) {
+              const btn = previewElements[i].querySelector('.remove-photo');
+              if (btn && parseInt(btn.dataset.index) === index) {
+                previewElements[i].remove();
+                break;
+              }
+            }
+            
+            // Update indices for remaining elements
+            const remainingBtns = previewGrid.querySelectorAll('.remove-photo');
+            remainingBtns.forEach((btn, i) => {
+              btn.dataset.index = i;
+            });
+            
+            // Update photo count
+            updatePhotoCount();
+          }
+
+          // Expose selectedFiles for form submission
+          window.getContraventionPhotos = function() {
+            return selectedFiles;
+          };
+
+          // Clear photos function
+          window.clearContraventionPhotos = function() {
+            selectedFiles = [];
+            previewGrid.innerHTML = '';
+            updatePhotoCount();
+          };
+
+          // Clear photos when modal is hidden
+          const modal = document.getElementById('assignContravModal');
+          if (modal) {
+            modal.addEventListener('hidden.bs.modal', function() {
+              selectedFiles = [];
+              previewGrid.innerHTML = '';
+              previewContainer.classList.add('d-none');
+            });
+          }
         })();
         </script>
 
